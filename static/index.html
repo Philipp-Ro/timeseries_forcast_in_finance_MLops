@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Live Prediction and retrain Showcase</title>
+        <script src="/static/script.js" defer></script>
+        <link rel="stylesheet" href="static/styles.css">
+    </head>
+<body>
+    <h1>Select Models</h1>
+    
+    <form id="modelForm">
+        <label for="ticker">Ticker Symbol:</label>
+        <input type="text" id="ticker" name="ticker" required>
+        <button type="button" onclick="fetchModels()">Fetch Models</button>
+        
+        <div id="checkboxContainer" class="checkbox-group">
+            <!-- Checkboxes will be added here dynamically -->
+        </div>
+
+        <div id="image-container"></div>
+        <button type="button" id="showPredictionButton">Show Prediction</button>
+    </form>
+    <button type="button" id="trainNewModelButton">Train New Model</button>
+
+<!-- The Modal -->
+<div id="trainModelModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Train New Model</h2>
+        <form id="trainModelForm">
+            <label for="train_ticker">Ticker Symbol:</label>
+            <input type="text" id="train_ticker" name="train_ticker" required>
+
+            <label for="num_epochs">Number of Epochs:</label>
+            <input type="number" id="num_epochs" name="num_epochs" required>
+
+            <label for="forecast_len">Forecast Length:</label>
+            <input type="number" id="forecast_len" name="forecast_len" required>
+
+            <button type="submit">Train Model</button>
+        </form>
+    </div>
+</div>
+    
+</body>
+</html>
+
+
+
+        
