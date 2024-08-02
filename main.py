@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
-from typing import List, Optional
+from typing import List, Any, Dict
 
 
 import RNN_model_class
@@ -12,13 +12,15 @@ import matplotlib.pyplot as plt
 import logging
 import os
 import yaml
-from fastapi import FastAPI,Form,Query,Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 import pickle
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
-
-
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
+from sklearn.metrics import mean_squared_error as MSE
+import shutil
 
 app = FastAPI()
 
@@ -43,16 +45,18 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 class Ticker(BaseModel):
     symbol: str
 
-
-class PredictRequest(BaseModel):
+class PlotRequest(BaseModel):
     ticker: str
-    checked_models: List[str]
-
+    model_list: List[str]
 
 class TrainRequest(BaseModel):
     ticker: str
     num_epochs: int
     forecast_len: int
+
+class DeleteModelRequest(BaseModel):
+    ticker: str
+    model: str
 
 # define global variable for older predictions 
 all_preds = {'Datetime': [], 'Prediction': [], 'Model_name': []}
@@ -63,48 +67,82 @@ async def read_index():
     return FileResponse("static/index.html")
 
 # predict and plot the data 
-@app.post("/predict/")
-async def predict_stock(request: PredictRequest):
+@app.post("/generate_plot/")
+async def predict_stock(request: PlotRequest):
+    logger.debug(f"Generate Plot")
     ticker = request.ticker
-    checked_models = request.checked_models
-
+    model_list = request.model_list
+    logger.debug(f"Model_list:${model_list}")
     global all_preds
-    logger.debug(f"Received ticker for predict: {ticker}")
-    logger.debug(f"Received model names for predict: {checked_models}")
 
-    
+    mse_dict = {}
     # load prediction data 
     data = helper_fct.get_predict_data(ticker=ticker, interval='1m', seq_length=60)
     plot_data = data['Close'].reset_index()
-    plot_data['Datetime'] = pd.to_datetime(plot_data['Datetime'])
 
-    # Initialize all_preds if empty
+    # refactor datetime to the same timezone for merging 
+    plot_data['Datetime'] = pd.to_datetime(plot_data['Datetime'], utc=True)
+    plot_data['Datetime'] = plot_data['Datetime'].dt.tz_convert('America/New_York')
 
-    ticker_dir = os.path.join(MODEL_DB_DIR,ticker)
-    for name in checked_models :
-        params, model, scaler_X, scaler_Y = helper_fct.load_model(ticker, name, ticker_dir)
-        model = RNN_model_class.RNN_model(params=params, model=model, scaler_X=scaler_X, scaler_Y=scaler_Y)
-        prediction = model.predict(data)
-        all_preds['Datetime'].append(prediction['Datetime'])
-        all_preds['Prediction'].append(prediction['Prediction'])
-        all_preds['Model_name'].append(name)
+    for model_name in model_list :
+        # predict with the model
+        all_preds = predict_model(ticker, model_name, data, all_preds)
 
-        
+    # refactor df so that it has the structure:
+    # Datetime      Model_name_A            Model_name_B              Close
+    # date          prediction_model A      prediction_model B        actual_price
+    df_plot = pd.DataFrame(all_preds)
 
-    df = pd.DataFrame(all_preds)
-    df = df.drop_duplicates(subset=['Datetime', 'Model_name'])
+    # refactor datetime to the same timezone for merging 
+    df_plot['Datetime'] = pd.to_datetime(df_plot['Datetime'], utc=True)
+    df_plot['Datetime'] = df_plot['Datetime'].dt.tz_convert('America/New_York')
 
-    # Refactor df so that it has the desired structure
-    pivoted_df = df.pivot(index='Datetime', columns='Model_name', values='Prediction').reset_index()
+    # merging both dataframes 
+    df_plot = df_plot.drop_duplicates(subset=['Datetime', 'Model_name'])               
+    pivoted_df = df_plot.pivot(index='Datetime', columns='Model_name', values='Prediction').reset_index()
     plot_data = pd.merge(pivoted_df, plot_data, on="Datetime", how='outer').sort_values(by='Datetime').reset_index(drop=True)
-    buf = plot_predictions(plot_data, checked_models)
 
-    return StreamingResponse(buf, media_type="image/png")
+    # calculate MSE
+    df_mse = plot_data.dropna()
+    for model_name in model_list :
+        if df_mse.empty:
+            mse_dict[model_name] = None
+            
+        else :
+            mse_dict[model_name] = MSE(df_mse['Close'],df_mse[model_name])
+
+    logger.debug(f"PLOT DATA HERE ")
+    fig = plot_predictions(plot_data, model_list)
+    logger.debug(f"FIGURE CREATED ")
+    fig_json = fig.to_json()
+
+    # Create the response content
+    response_content = {
+        "figure": fig_json,
+        "MSE": mse_dict
+        }
+            
+    return JSONResponse(content=response_content, status_code=200)
+
+
+def predict_model(ticker, model_name, data, all_preds):
+    # set folder dir for model
+    ticker_dir = os.path.join(MODEL_DB_DIR,ticker)
+    params, model, scaler_X, scaler_Y = helper_fct.load_model(ticker, model_name, ticker_dir)
+    model = RNN_model_class.RNN_model(params=params, model=model, scaler_X=scaler_X, scaler_Y=scaler_Y)
+    prediction = model.predict(data)
+    all_preds['Datetime'].append(prediction['Datetime'])
+    all_preds['Prediction'].append(prediction['Prediction'])
+    all_preds['Model_name'].append(model_name)
+
+    return all_preds
+
+
 
 
 @app.post("/fetchmodels")
 async def list_models(ticker: Ticker):
-    #stock_symbol = ticker.symbol
+    #reset all_preds for new ticker 
     stock_symbol = ticker.symbol
     logger.debug(f"Fetching models for: {stock_symbol}")
     ticker_dir = os.path.join(MODEL_DB_DIR,stock_symbol)
@@ -117,7 +155,16 @@ async def list_models(ticker: Ticker):
         logger.debug(f"No models found for: {stock_symbol}")
         models =[]
         
-    return JSONResponse(content=models, status_code=200)  
+    mse_dict = {model: None for model in models}
+
+    response_content = {
+        "ticker":ticker.symbol,
+        "model_list": models,
+        "mse_dict": mse_dict
+        }
+    logger.debug(f"CONTENT: {response_content}")         
+    return JSONResponse(content=response_content, status_code=200)
+     
 
 
         
@@ -152,32 +199,48 @@ def train_model(request:TrainRequest):
     return JSONResponse(content={"message": "Model trained successfully!"}, status_code=200)
    
 
+
 def plot_predictions(plot_data, model_names):
-   
-    fig, ax = plt.subplots()
-    fig.set_size_inches(10, 8.5)
+    # Create a Plotly figure
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    ax.scatter(plot_data['Datetime'], plot_data['Close'], label='Closing Price', color='blue')
-    ax.plot(plot_data['Datetime'], plot_data['Close'], color='blue')
+    # Add the actual closing price line and scatter
+    fig.add_trace(go.Scatter(
+        x=plot_data['Datetime'],
+        y=plot_data['Close'],
+        mode='lines+markers',
+        name='Closing Price',
+        line=dict(color='blue'),
+        marker=dict(color='blue')
+    ))
 
-
+    # Add the predicted values for each model
     if model_names:
         for name in model_names:
-            ax.scatter(plot_data['Datetime'], plot_data[name], label=name)
-            ax.plot(plot_data['Datetime'], plot_data[name])
+            fig.add_trace(go.Scatter(
+                x=plot_data['Datetime'],
+                y=plot_data[name],
+                mode='lines+markers',
+                name=name
+            ))
 
-    plt.xticks(rotation=45)
-    plt.xlabel('Time')
-    plt.ylabel('Price')
-    plt.legend()
-    plt.grid(True)
+    # Set x-axis and y-axis titles
+    fig.update_layout(
+        title="Stock Price Predictions",
+        xaxis_title="Time",
+        yaxis_title="Price",
+        legend_title="Legend",
+        template="plotly_white"
+    )
 
-    # Save the plot to a BytesIO buffer
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
+    # Customize x-axis ticks (rotate labels)
+    fig.update_xaxes(tickangle=45)
 
-    return buf
+    # Add grid lines
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+
+    return fig
+   
 
 def save_training(model, scaler_X, scaler_Y, params):
         ticker_dir = os.path.join(MODEL_DB_DIR,params['data_params']['ticker'])
@@ -203,6 +266,46 @@ def save_training(model, scaler_X, scaler_Y, params):
         yaml_filename = f"{models_directory}/params.yaml"
         with open(yaml_filename, 'w') as f:
             yaml.dump(params, f)
+
+
+
+
+@app.post("/delete_model/")
+async def delete_model(request: DeleteModelRequest):
+    ticker = request.ticker
+    model = request.model
+    ticker_dir = os.path.join(MODEL_DB_DIR,ticker)
+    model_dir = os.path.join(ticker_dir, model)
+
+    logger.debug(f"MODEL DIR   : {model_dir}")
+    success = delete_folder(model_dir)
+    
+   
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete model")
+
+    return JSONResponse(content=success, status_code=200)
+
+
+def delete_folder(folder_path):
+    if os.path.isdir(folder_path):
+        try:
+            shutil.rmtree(folder_path)
+            print(f"Successfully deleted the folder and all its contents: {folder_path}")
+            success = True
+        except FileNotFoundError:
+            print(f"Folder not found: {folder_path}")
+            success = False
+        except PermissionError:
+            print(f"Permission denied: {folder_path}")
+            success = False
+        except OSError as e:
+            print(f"Error: {e.strerror}")
+            success = False
+    else:
+        print(f"The path is not a directory: {folder_path}")
+        success = False
+    return success
 
 
 if __name__ == "__main__":

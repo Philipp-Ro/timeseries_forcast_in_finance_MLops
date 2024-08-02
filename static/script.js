@@ -1,85 +1,116 @@
+// Predict Button Event Listener
+const btn_predict = document.getElementById('predictButton');
+let modelsData = {'ticker':'', 'model_list':[] , 'mse_dict': []}
 
+if (btn_predict) {
+    btn_predict.onclick = async function() {
+        const tickerInput = document.getElementById('ticker').value;
+        if (!tickerInput) {
+            alert('Please enter a ticker symbol.');
+            return;
+        }
+        console.log("The ticker at Button is:",tickerInput)
+        
+        modelsData = await fetchModels(tickerInput);
 
+        if (modelsData) {
+            await displayModels(modelsData);
+            await refreshImage(modelsData);
+        }
 
+    };
+}
 
-// Function to fetch models and populate checkboxes
-async function fetchModels() {
-    const inputValue = document.getElementById('ticker').value;
-
-    if (!inputValue) {
-        alert('Please enter a ticker symbol.');
-        return;
-    }
-
-    try {
+// Function to fetch models and return the data
+async function fetchModels(tickerInput) {
+    console.log('Fetching models for ticker:', tickerInput);
         const response = await fetch('/fetchmodels', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ "symbol": inputValue })
+            body: JSON.stringify({"symbol": tickerInput})
         });
 
-        if (!response.ok) {
-            throw new Error('Network response was not ok.');
-        }
+        console.log('Fetch response status:', response.status, response.statusText);
 
-        const modelList = await response.json();
-        console.log(modelList);
+        
+        //const data = await response.json();
+        const data = await response.json();
+        console.log('Data received:', data.model_list);
+        console.log('Data received:', data.ticker);
+        console.log('Data received:', data.mse_dict);
+        return {
+            ticker: data.ticker,
+            model_list: data.model_list,
+            mse_dict: data.mse_dict
+        };
 
-        // Clear previous checkboxes
-        const checkboxContainer = document.getElementById('checkboxContainer');
-        checkboxContainer.innerHTML = '';
-
-        // Populate checkboxes
-        modelList.forEach(model => {
-            const checkboxWrapper = document.createElement('div');
-            checkboxWrapper.classList.add('checkbox-item');
-
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.id = model;
-            checkbox.name = 'model';
-            checkbox.value = model;
-
-            const label = document.createElement('label');
-            label.htmlFor = model;
-            label.textContent = model;
-
-            checkboxWrapper.appendChild(checkbox);
-            checkboxWrapper.appendChild(label);
-            checkboxContainer.appendChild(checkboxWrapper);
-        });
-    } catch (error) {
-        console.error('Error fetching models:', error);
-        alert('An error occurred while fetching models.');
-    }
 }
 
-// Function to refresh the image based on selected models
-async function refreshImage() {
-    const inputValue = document.getElementById('ticker').value;
 
-    if (!inputValue) {
-        alert('Please enter a ticker symbol.');
+// Function to display models using provided modelsData
+function displayModels(modelsData) {
+    console.log(modelsData.model_list)
+
+    const modelList = modelsData.model_list;
+    const mseDict = modelsData.mse_dict;
+
+    const modelListContainer = document.getElementById('modelListContainer');
+    if (!modelListContainer) {
+        console.error('Error: modelListContainer not found.');
         return;
     }
+    modelListContainer.innerHTML = '';
 
-    // Get all checked model names
-    const checkedModels = Array.from(document.querySelectorAll('input[name="model"]:checked'))
-                               .map(checkbox => checkbox.value);
+    modelList.forEach((model) => {
+        const modelItem = document.createElement('div');
+        modelItem.classList.add('model-item');
 
-    console.log(checkedModels);
+        const modelName = document.createElement('span');
+        modelName.classList.add('model-name');
+        modelName.innerText = model;
+        modelName.style.marginRight = '10px';
+
+        const modelMSE = document.createElement('span');
+        modelMSE.classList.add('model-mse');
+        const mse = mseDict[model];
+        modelMSE.innerText = mse !== undefined && mse !== null ? `MSE: ${mse.toFixed(2)}` : 'MSE: N/A';
+
+        const deleteButton = document.createElement('button');
+        deleteButton.classList.add('delete-button');
+        deleteButton.innerText = 'Delete';
+        deleteButton.style.marginLeft = '10px';
+        deleteButton.type = 'button'; 
+        deleteButton.onclick = () => deleteModel(model, modelsData);
+
+        modelItem.appendChild(modelName);
+        modelItem.appendChild(modelMSE);
+        modelItem.appendChild(deleteButton);
+        modelListContainer.appendChild(modelItem);
+    });
+}
+
+let isRefreshing = false;
+
+// Function to refresh the plot based on selected models
+async function refreshImage(modelsData) {
+    console.log(modelsData)
+    if (isRefreshing) return;
+    isRefreshing = true;
 
     try {
-        const response = await fetch('/predict/', {
+        const inputValue = modelsData.ticker;
+        console.log(modelsData.ticker)
+        console.log(modelsData.model_list)
+        const response = await fetch('/generate_plot/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 "ticker": inputValue,
-                "checked_models": checkedModels
+                "model_list": modelsData.model_list
             })
         });
 
@@ -87,80 +118,146 @@ async function refreshImage() {
             throw new Error('Network response was not ok.');
         }
 
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const img = document.createElement('img');
-        img.src = url;
+        const plotData = await response.json();
+        console.log(plotData)
+        const plotObject = JSON.parse(plotData.figure);
+        const updatedMseDict = plotData.MSE;
 
-        const imageContainer = document.getElementById('image-container');
-        imageContainer.innerHTML = ''; // Clear previous image
-        imageContainer.appendChild(img);
+        Plotly.react('plotly-div', plotObject.data, plotObject.layout);
+
+        modelsData.mse_dict = updatedMseDict;
+
+        modelsData.model_list.forEach((model) => {
+            const mse = updatedMseDict[model];
+            const modelItem = Array.from(document.getElementsByClassName('model-item'))
+                .find(item => item.querySelector('.model-name').innerText === model);
+            
+            if (modelItem) {
+                const modelMSE = modelItem.querySelector('.model-mse');
+                if (modelMSE) {
+                    modelMSE.innerText = mse !== null ? `MSE: ${mse.toFixed(2)}` : 'MSE: N/A';
+                }
+            }
+        });
+
     } catch (error) {
-        console.error('Error refreshing image:', error);
-        alert('An error occurred while refreshing the image.');
+        console.error('Error refreshing plot:', error);
+        alert('An error occurred while refreshing the plot.');
     }
+    isRefreshing = false;
 }
 
-// Add event listener to the Show Prediction button
-document.getElementById('showPredictionButton').addEventListener('click', refreshImage);
-
-// Handle form submission
-document.getElementById('modelForm').addEventListener('submit', function(event) {
-    event.preventDefault(); // Prevent default form submission
-    refreshImage();
-});
-
-// Refresh the image every 30 seconds
-setInterval(refreshImage, 30000);
-
-
-// Get modal elements
-const modal = document.getElementById("trainModelModal");
-const btn = document.getElementById("trainNewModelButton");
-const span = document.getElementsByClassName("close")[0];
-
-// When the user clicks the button, open the modal
-btn.onclick = function() {
+// Refresh every 10s
+const intervalId = setInterval(async () => {
     const tickerInput = document.getElementById('ticker').value;
-    if (!tickerInput) {
-        alert('Please enter a ticker symbol.');
-        return;
+    const modelData = await fetchModels( tickerInput );
+    if (modelData) {
+        await displayModels(modelData);
+        await refreshImage(modelData);
     }
-    document.getElementById('train_ticker').value = tickerInput; // Set the ticker in the modal form
-    modal.style.display = "block";
+}, 10000);
+
+// Handling new model training modal
+const btn_train = document.getElementById("trainNewModelButton");
+const span = document.getElementsByClassName("close")[0];
+const modal = document.getElementById("trainModelModal");
+
+if (btn_train ) {
+    btn_train .onclick = function() {
+        const tickerInput = document.getElementById('ticker').value;
+        if (!tickerInput) {
+            alert('Please enter a ticker symbol.');
+            return;
+        }
+        document.getElementById('train_ticker').value = tickerInput;
+        modal.style.display = "block";
+    };
 }
 
-// When the user clicks on <span> (x), close the modal
-span.onclick = function() {
-    modal.style.display = "none";
+if (span) {
+    span.onclick = function() {
+        modal.style.display = "none";
+    };
 }
 
-// When the user clicks anywhere outside of the modal, close it
 window.onclick = function(event) {
     if (event.target === modal) {
         modal.style.display = "none";
     }
 }
 
-document.getElementById('trainModelForm').addEventListener('submit', function(event) {
-    event.preventDefault(); // Prevent default form submission
-    const ticker = document.getElementById('train_ticker').value;
-    const num_epochs = document.getElementById('num_epochs').value;
-    const forecast_len = document.getElementById('forecast_len').value;
+// Handle form submission for training a new model
+const trainForm = document.getElementById('trainModelForm');
+if (trainForm) {
+    trainForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const ticker = document.getElementById('train_ticker').value;
+        const num_epochs = document.getElementById('num_epochs').value;
+        const forecast_len = document.getElementById('forecast_len').value;
 
-    fetch('/train_new_model/', {
-          method: 'POST',
-            headers: {
-             'Content-Type': 'application/json',
-            },
-         body: JSON.stringify({ "ticker":ticker, "num_epochs":num_epochs, "forecast_len":forecast_len }),
-         }).then(response => response.json())
-     .then(data => {
+        try {
+            const response = await fetch('/train_new_model/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    "ticker": ticker,
+                    "num_epochs": num_epochs,
+                    "forecast_len": forecast_len
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Network response was not ok.');
+            }
+
+            const data = await response.json();
             console.log('Success:', data);
-         }).catch((error) => {
-            console.error('Error:', error);
-         });
-    
 
-    modal.style.display = "none";
-});
+            // Update the UI
+            modelsData = await fetchModels(ticker);
+            if (modelsData) {
+                await displayModels(modelsData);
+                await refreshImage(modelsData);
+            }
+            modal.style.display = "none";
+
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    });
+}
+
+// Handle deleting a model
+async function deleteModel(model, modelsData) {
+    const ticker = modelsData.ticker;
+    console.log('ticker',modelsData.ticker)
+    console.log('model list',modelsData.model_list)
+    try {
+        const response = await fetch('/delete_model/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                "ticker": ticker,
+                "model": model
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Network response was not ok.');
+        }
+
+        modelsData = await fetchModels(ticker);
+        if (modelsData) {
+            await displayModels(modelsData);
+            await refreshImage(modelsData);
+        }
+
+    } catch (error) {
+        console.error('Error deleting model:', error);
+        alert('An error occurred while deleting the model.');
+    }
+}
