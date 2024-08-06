@@ -1,14 +1,11 @@
 
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
-from typing import List, Any, Dict
-
-
-import RNN_model_class
+from fastapi.responses import  JSONResponse, FileResponse
+from typing import List
+from pathlib import Path
+import yfinance as yf
+import model_classes.RNN_model_class as RNN_model_class
 import helper_fct
 import pandas as pd
-import io
-import matplotlib.pyplot as plt
 import logging
 import os
 import yaml
@@ -19,7 +16,7 @@ from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
-from sklearn.metrics import mean_squared_error as MSE
+from sklearn.metrics import mean_absolute_error as MAE
 import shutil
 
 app = FastAPI()
@@ -35,7 +32,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR , "static")
 
 # set up path for model DB
-MODEL_DB_DIR =os.path.join(BASE_DIR,"Model_DB")
+MODEL_DB_DIR =os.path.join(BASE_DIR, '..', 'Model_DB')
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -69,15 +66,16 @@ async def read_index():
 # predict and plot the data 
 @app.post("/generate_plot/")
 async def predict_stock(request: PlotRequest):
-    logger.debug(f"Generate Plot")
     ticker = request.ticker
     model_list = request.model_list
     logger.debug(f"Model_list:${model_list}")
     global all_preds
 
-    mse_dict = {}
+    mae_dict = {}
     # load prediction data 
     data = helper_fct.get_predict_data(ticker=ticker, interval='1m', seq_length=60)
+    if data.empty:
+        return
     plot_data = data['Close'].reset_index()
 
     # refactor datetime to the same timezone for merging 
@@ -86,7 +84,12 @@ async def predict_stock(request: PlotRequest):
 
     for model_name in model_list :
         # predict with the model
-        all_preds = predict_model(ticker, model_name, data, all_preds)
+        prediction = predict_model(data=data, model_name=model_name)
+
+        all_preds['Datetime'].append(prediction['Datetime'])
+        all_preds['Prediction'].append(prediction['Prediction'])
+        all_preds['Model_name'].append(model_name)
+
 
     # refactor df so that it has the structure:
     # Datetime      Model_name_A            Model_name_B              Close
@@ -102,14 +105,27 @@ async def predict_stock(request: PlotRequest):
     pivoted_df = df_plot.pivot(index='Datetime', columns='Model_name', values='Prediction').reset_index()
     plot_data = pd.merge(pivoted_df, plot_data, on="Datetime", how='outer').sort_values(by='Datetime').reset_index(drop=True)
 
-    # calculate MSE
-    df_mse = plot_data.dropna()
-    for model_name in model_list :
-        if df_mse.empty:
-            mse_dict[model_name] = None
+
+    # Iterate over model columns
+    for model_col in [col for col in plot_data.columns if col in model_list]:
+
+        # Drop rows where 'Close' or the current model column are NaN
+        df_clean = plot_data.dropna(subset=['Close', model_col])
+
+        # Extract true values and predicted values
+        y_true = df_clean['Close']
+        y_pred = df_clean[model_col]
+        
+        if df_clean.empty:
+            mae = None
             
         else :
-            mse_dict[model_name] = MSE(df_mse['Close'],df_mse[model_name])
+            # Calculate the absolute error
+            mae = MAE(y_true,y_pred)
+
+        mae_dict[model_col] = mae
+    
+ 
 
     logger.debug(f"PLOT DATA HERE ")
     fig = plot_predictions(plot_data, model_list)
@@ -119,23 +135,19 @@ async def predict_stock(request: PlotRequest):
     # Create the response content
     response_content = {
         "figure": fig_json,
-        "MSE": mse_dict
+        "MAE": mae_dict
         }
             
     return JSONResponse(content=response_content, status_code=200)
 
 
-def predict_model(ticker, model_name, data, all_preds):
+def predict_model( data, model_name):
     # set folder dir for model
-    ticker_dir = os.path.join(MODEL_DB_DIR,ticker)
-    params, model, scaler_X, scaler_Y = helper_fct.load_model(ticker, model_name, ticker_dir)
-    model = RNN_model_class.RNN_model(params=params, model=model, scaler_X=scaler_X, scaler_Y=scaler_Y)
+    model = RNN_model_class.RNN_model()
+    model.load_model(model_name=model_name,model_db=MODEL_DB_DIR)
     prediction = model.predict(data)
-    all_preds['Datetime'].append(prediction['Datetime'])
-    all_preds['Prediction'].append(prediction['Prediction'])
-    all_preds['Model_name'].append(model_name)
 
-    return all_preds
+    return prediction
 
 
 
@@ -144,23 +156,28 @@ def predict_model(ticker, model_name, data, all_preds):
 async def list_models(ticker: Ticker):
     #reset all_preds for new ticker 
     stock_symbol = ticker.symbol
-    logger.debug(f"Fetching models for: {stock_symbol}")
-    ticker_dir = os.path.join(MODEL_DB_DIR,stock_symbol)
 
-    if os.path.exists(ticker_dir):
-        logger.debug(f"Available models are : {os.listdir(ticker_dir)}")
-        models = os.listdir(ticker_dir)
-        
-    else:
-        logger.debug(f"No models found for: {stock_symbol}")
-        models =[]
-        
-    mse_dict = {model: None for model in models}
+    yf_Ticker= yf.Ticker(stock_symbol)
+    try: 
+        yf_Ticker.info
+    except:
+         # If symbol doesn't exist, return an error response
+        return JSONResponse(content={"error": "Invalid ticker symbol provided."}, status_code=400)
+
+    logger.debug(f"Fetching models for: {stock_symbol}")
+
+    
+    # List all folders in the base directory that start with the ticker string
+    models = [folder for folder in os.listdir(MODEL_DB_DIR)
+                       if os.path.isdir(os.path.join(MODEL_DB_DIR, folder)) and folder.startswith(stock_symbol)]
+    
+
+    mae_dict = {model: None for model in models}
 
     response_content = {
         "ticker":ticker.symbol,
         "model_list": models,
-        "mse_dict": mse_dict
+        "mae_dict": mae_dict
         }
     logger.debug(f"CONTENT: {response_content}")         
     return JSONResponse(content=response_content, status_code=200)
@@ -187,12 +204,10 @@ def train_model(request:TrainRequest):
     params['train_params']['num_epochs'] = num_epochs
     params['model_params']['output_size'] = forecast_len
 
-    model = None
-    scaler_X = None
-    scaler_Y = None
+
     
-    RNN_model = RNN_model_class.RNN_model(params, model, scaler_X, scaler_Y)
-    model, scaler_X, scaler_Y, params = RNN_model.train_model()
+    RNN_model = RNN_model_class.RNN_model()
+    model, scaler_X, scaler_Y, params = RNN_model.train_model(train_params=params)
 
     save_training(model, scaler_X, scaler_Y, params)
 
@@ -243,13 +258,11 @@ def plot_predictions(plot_data, model_names):
    
 
 def save_training(model, scaler_X, scaler_Y, params):
-        ticker_dir = os.path.join(MODEL_DB_DIR,params['data_params']['ticker'])
-        logger.debug(f"ticker dir  : {ticker_dir}")
-        os.makedirs(ticker_dir, exist_ok=True)
-
+        # before saving a new model check if the Model_db has more than 10 entrys if so delete all models before saving the trained one 
+        manage_folders(MODEL_DB_DIR)      
         model_name = params['model_params']['model_name']
 
-        models_directory=os.path.join(ticker_dir,model_name)
+        models_directory=os.path.join(MODEL_DB_DIR,model_name)
         os.makedirs(models_directory, exist_ok=True)
         
         
@@ -307,8 +320,23 @@ def delete_folder(folder_path):
         success = False
     return success
 
+def manage_folders(base_dir):
+    
+    base_path = Path(base_dir)
+    # Get a list of all directories in the base directory
+    folders = [folder for folder in base_path.iterdir() if folder.is_dir()]
+    
+    # Check if the number of folders exceeds 10
+    if len(folders) >= 10:
+        print(f"Number of folders exceeds 10. Total folders: {len(folders)}")
+        for folder in folders:
+            delete_folder(folder)  # Delete each folder
+        print("All folders have been deleted.")
+    else:
+        print(f"Number of folders is within limit. Total folders: {len(folders)}")
+
 
 if __name__ == "__main__":
     import uvicorn
  
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)

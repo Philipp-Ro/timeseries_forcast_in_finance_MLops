@@ -3,7 +3,7 @@ import pickle
 import yaml
 import yfinance as yf
 
-def load_model(ticker:str, model_name:str, ticker_dir:str):
+def load_model( model_name:str, ticker_dir:str):
     
             
     model_name_path = os.path.join(ticker_dir, model_name )

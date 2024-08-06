@@ -1,6 +1,6 @@
 // Predict Button Event Listener
 const btn_predict = document.getElementById('predictButton');
-let modelsData = {'ticker':'', 'model_list':[] , 'mse_dict': []}
+let modelsData = {'ticker':'', 'model_list':[] , 'mae_dict': []}
 
 if (btn_predict) {
     btn_predict.onclick = async function() {
@@ -9,11 +9,12 @@ if (btn_predict) {
             alert('Please enter a ticker symbol.');
             return;
         }
-        console.log("The ticker at Button is:",tickerInput)
+        
         
         modelsData = await fetchModels(tickerInput);
 
         if (modelsData) {
+            console.log('modelsData:', modelsData);
             await displayModels(modelsData);
             await refreshImage(modelsData);
         }
@@ -24,6 +25,8 @@ if (btn_predict) {
 // Function to fetch models and return the data
 async function fetchModels(tickerInput) {
     console.log('Fetching models for ticker:', tickerInput);
+    
+    try {
         const response = await fetch('/fetchmodels', {
             method: 'POST',
             headers: {
@@ -33,28 +36,40 @@ async function fetchModels(tickerInput) {
         });
 
         console.log('Fetch response status:', response.status, response.statusText);
+        // Check if the response status is not 200 (OK)
+        if (response.status !== 200) {
+            alert('Please enter a valid ticker symbol');
+            return;
+            }
 
-        
-        //const data = await response.json();
         const data = await response.json();
+        console.log('Data:', data);
+
+
+        // Log data if not empty
         console.log('Data received:', data.model_list);
         console.log('Data received:', data.ticker);
-        console.log('Data received:', data.mse_dict);
+        console.log('Data received:', data.mae_dict);
+
         return {
             ticker: data.ticker,
             model_list: data.model_list,
-            mse_dict: data.mse_dict
+            mae_dict: data.mae_dict
         };
 
+    } catch (error) {
+        console.error('Error fetching models:', error);
+        alert('An error occurred while fetching the models. Please try again later.');
+    }
 }
 
 
-// Function to display models using provided modelsData
 function displayModels(modelsData) {
-    console.log(modelsData.model_list)
+    console.log('Model List:', modelsData.model_list);
+    console.log('MAE Dictionary:', modelsData.mae_dict);
 
     const modelList = modelsData.model_list;
-    const mseDict = modelsData.mse_dict;
+    const maeDict = modelsData.mae_dict;
 
     const modelListContainer = document.getElementById('modelListContainer');
     if (!modelListContainer) {
@@ -72,10 +87,17 @@ function displayModels(modelsData) {
         modelName.innerText = model;
         modelName.style.marginRight = '10px';
 
-        const modelMSE = document.createElement('span');
-        modelMSE.classList.add('model-mse');
-        const mse = mseDict[model];
-        modelMSE.innerText = mse !== undefined && mse !== null ? `MSE: ${mse.toFixed(2)}` : 'MSE: N/A';
+        const modelMAE = document.createElement('span');
+        modelMAE.classList.add('model-mae');
+        
+        // Ensure maeDict is defined and has the property model
+        let mae = 'N/A'; // Default value if the key is not found
+        if (maeDict && model in maeDict) {
+            mae = maeDict[model];
+        }
+        
+        // Display MAE or 'N/A'
+        modelMAE.innerText = mae !== undefined && mae !== null ? `MAE: ${mae.toFixed(2)}` : 'MAE: N/A';
 
         const deleteButton = document.createElement('button');
         deleteButton.classList.add('delete-button');
@@ -85,7 +107,7 @@ function displayModels(modelsData) {
         deleteButton.onclick = () => deleteModel(model, modelsData);
 
         modelItem.appendChild(modelName);
-        modelItem.appendChild(modelMSE);
+        modelItem.appendChild(modelMAE);
         modelItem.appendChild(deleteButton);
         modelListContainer.appendChild(modelItem);
     });
@@ -121,28 +143,16 @@ async function refreshImage(modelsData) {
         const plotData = await response.json();
         console.log(plotData)
         const plotObject = JSON.parse(plotData.figure);
-        const updatedMseDict = plotData.MSE;
+        const updatedMaeDict = plotData.MAE;
 
         Plotly.react('plotly-div', plotObject.data, plotObject.layout);
-
-        modelsData.mse_dict = updatedMseDict;
-
-        modelsData.model_list.forEach((model) => {
-            const mse = updatedMseDict[model];
-            const modelItem = Array.from(document.getElementsByClassName('model-item'))
-                .find(item => item.querySelector('.model-name').innerText === model);
-            
-            if (modelItem) {
-                const modelMSE = modelItem.querySelector('.model-mse');
-                if (modelMSE) {
-                    modelMSE.innerText = mse !== null ? `MSE: ${mse.toFixed(2)}` : 'MSE: N/A';
-                }
-            }
-        });
-
+        console.log(updatedMaeDict)
+        modelsData.mae_dict = updatedMaeDict;
+        displayModels(modelsData)
+        
     } catch (error) {
         console.error('Error refreshing plot:', error);
-        alert('An error occurred while refreshing the plot.');
+        alert('Please enter valid ticker');
     }
     isRefreshing = false;
 }
@@ -152,7 +162,6 @@ const intervalId = setInterval(async () => {
     const tickerInput = document.getElementById('ticker').value;
     const modelData = await fetchModels( tickerInput );
     if (modelData) {
-        await displayModels(modelData);
         await refreshImage(modelData);
     }
 }, 10000);
@@ -188,12 +197,20 @@ window.onclick = function(event) {
 
 // Handle form submission for training a new model
 const trainForm = document.getElementById('trainModelForm');
+
 if (trainForm) {
     trainForm.addEventListener('submit', async function(event) {
         event.preventDefault();
         const ticker = document.getElementById('train_ticker').value;
         const num_epochs = document.getElementById('num_epochs').value;
         const forecast_len = document.getElementById('forecast_len').value;
+
+        modal.style.display = "none";
+
+        // Show waiting screen
+        if (waitingScreen) {
+            waitingScreen.style.display = "block";
+        }
 
         try {
             const response = await fetch('/train_new_model/', {
@@ -225,6 +242,11 @@ if (trainForm) {
 
         } catch (error) {
             console.error('Error:', error);
+        } finally {
+            // Hide waiting screen
+            if (waitingScreen) {
+                waitingScreen.style.display = "none";
+            }
         }
     });
 }

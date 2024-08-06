@@ -1,0 +1,3 @@
+docker run -d -p 8000:8000 -v /path/to/local/model_db:/model_db --name test_1 ml_ops_showcase 
+
+docker build -t ml_ops_showcase .
