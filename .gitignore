@@ -90,3 +90,6 @@ ENV/
 
 # Model database files
 model_db/
+
+# no private key from project
+ml_ops_finance_proj_server_key.pem
