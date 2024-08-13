@@ -6,10 +6,7 @@ WORKDIR /app
 
 # Copy the requirements file into the container
 COPY requirements.txt .
-
-# Install the Python dependencies except pywin32
-RUN sed -i '/pywin32/d' requirements.txt && \
-    pip install --no-cache-dir -r requirements.txt
+RUN sed -i '/pywin32/d' requirements.txt && pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code into the container
 COPY ./app /app
@@ -22,4 +19,5 @@ COPY ./Model_DB /Model_DB
 RUN chmod -R 777 /Model_DB
 
 EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "120"]

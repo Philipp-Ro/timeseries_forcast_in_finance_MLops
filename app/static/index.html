@@ -3,14 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Prediction and Retrain Showcase</title>
+    <title>ML Ops showcase for live prediction of assets</title>
     <link rel="stylesheet" href="static/styles.css">
     <script src="/static/script.js" defer></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Select Models</h1>
+        <h1>ML Ops showcase for live prediction of assets</h1>
+        <p>
+            This project is designed as a fully containerized MLOps pipeline deployed on an AWS EC2 instance. 
+            You can choose a stock symbol and view the available models in the database. 
+            If no models are found, you can train an RNN model on the minute-by-minute closing prices. 
+            Once the actual price reaches the forecast length of your model, the Mean Absolute Error (MAE) 
+            is automatically calculated and continuously updated.
+        </p>
+        
+        <p>
+            The project is structured to easily expand the pipeline with additional model architectures 
+            and more advanced training configurations. The source code is available 
+            <a href="https://github.com/Philipp-Ro/timeseries_forcast_in_finance_MLops">here</a>.
+        </p>
+        
+        <p>
+            Please note that since this is a live prediction, the market for your chosen asset must be 
+            open at the time of prediction.
+        </p>
 
         <form id="modelForm">
             <div class="form-group">

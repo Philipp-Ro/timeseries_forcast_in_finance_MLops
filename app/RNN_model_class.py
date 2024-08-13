@@ -1,15 +1,14 @@
 import os
 import pickle
 import yaml
-import yfinance as yf
 import torch
 import torch.nn as nn
 import datetime as dt
-import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np 
 import torch.optim as optim
-
+import pandas as pd
+import data_api
 
 class RNN_price_predictor(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size):
@@ -58,40 +57,42 @@ class RNN_model():
 
     
     def predict(self, data_df):
-        #get features 
+        # Get features
         features = data_df[self.params['model_params']["features"]]
-        #scale features
+        
+        # Scale features
         features[features.columns] = self.scaler_X.transform(features[features.columns])
-
-        #prepare for prediction 
+        
+        # Prepare for prediction
         features = features.values
         features = torch.tensor(features, dtype=torch.float32)
         features = features.unsqueeze(0)
-
+        
         self.model.eval()
 
         with torch.no_grad():
-            # predict
+            # Predict
             new_prediction = self.model(features)
-            # inverse scale 
+            # Inverse scale
             new_prediction = self.scaler_Y.inverse_transform(new_prediction.numpy())
-            # get the last element since models with output size n predict n minutes into the future
-
-        # get timecode for prediction   
-        current_time = data_df.index[-1]
-
-        # adjust here ifyou choose differend candle size 
+            
+        # Get timecode for prediction
+        latest_row = data_df.iloc[0]  
+        current_time = pd.to_datetime(latest_row['Datetime'])  
+        
+        # Adjust for different candle size
         predict_time = current_time + dt.timedelta(minutes=self.params['model_params']['output_size'])
         
-        #return just the last value in the forecast list 
-        # this is the value corresponding to the timestamp 
+        # Return just the last value in the forecast list
+        # This is the value corresponding to the timestamp
         return {'Datetime': predict_time, 'Prediction': new_prediction[0][-1]}
-    
+        
 
         
     def train_model(self, train_params):
-        df,start_date_train, end_date_train = get_train_data(ticker=train_params['data_params']['ticker'],interval=train_params['data_params']['interval'])
-
+   
+        df,start_date_train, end_date_train = data_api.get_train_data(ticker=train_params['data_params']['ticker'])
+      
         # normalizing the output
         df_target = df[['Close']]
         scaler_Y = MinMaxScaler()
@@ -102,7 +103,7 @@ class RNN_model():
         scaler_X = MinMaxScaler()
         scaler_X = scaler_X.fit(df[df.columns])
         df[df.columns]= scaler_X.transform(df[df.columns])
-
+     
         #Create sequences
         sequences, targets = create_sequences(df, seq_length=train_params['data_params']['seq_length'], predict_length=train_params['data_params']['predict_length'], target_column=train_params['data_params']['target_column'])
         
@@ -118,7 +119,7 @@ class RNN_model():
         Y_train = torch.tensor(train_targets, dtype=torch.float32)
         X_test= torch.tensor(test_sequences, dtype=torch.float32)
         Y_test= torch.tensor(test_targets, dtype=torch.float32)
-
+       
         # intt model optimizer and lossfct
         model = RNN_price_predictor(train_params['model_params']['input_size'], train_params['model_params']['hidden_size'], train_params['model_params']['num_layers'], train_params['model_params']['output_size'])
         optimizer = optim.Adam(model.parameters(), lr=train_params['train_params']['lr'])
@@ -161,8 +162,9 @@ class RNN_model():
 
         train_params['train_params']['train_loss_per_epoch'] = train_loss_per_epoch
         train_params['train_params']['test_loss_per_epoch'] = test_loss_per_epoch
-        train_params['train_params']['start_date_train'] = start_date_train
-        train_params['train_params']['end_date_train'] = end_date_train
+        # Convert to string and save the timestamp for first and last candle
+        train_params['train_params']['start_date_train'] = start_date_train.isoformat()
+        train_params['train_params']['end_date_train'] = end_date_train.isoformat()
 
         # create model name
         self.params =train_params
@@ -173,13 +175,13 @@ class RNN_model():
         self.model = model
         self.scaler_X = scaler_X
         self.scaler_Y = scaler_Y
-
+        
         return model, scaler_X, scaler_Y, self.params
     
 
-    def load_model(self, model_name:str, model_db:str):
-            
-        model_name_path = os.path.join(model_db, model_name )
+    def load_model( self, model_name:str, model_db_dir:str):
+     
+        model_name_path = os.path.join(model_db_dir, model_name )
 
         model_path = os.path.join(model_name_path  , 'model.pkl')
         scaler_X_path = os.path.join(model_name_path  , 'scaler_X.pkl')
@@ -205,23 +207,7 @@ class RNN_model():
 
 
 
-def get_train_data(ticker: str, interval:str )-> pd.DataFrame:
-    if interval =='1m':
-        num_days = 3
-    elif interval =='5m':
-        num_days = 7
-    elif interval =='1h':
-        num_days =30
-    else:
-        return None
-    end_date = dt.datetime.now()
-    start_date = end_date - dt.timedelta(days=num_days)  
-    stock_data = yf.download(ticker, start=start_date, end=end_date, interval=interval)
-
-    return stock_data, start_date, end_date
-
-
-def create_sequences(df, seq_length, predict_length, target_column):
+def create_sequences(df, seq_length:int, predict_length:int, target_column:str):
     sequences = []
     targets = []
    
@@ -237,23 +223,3 @@ def create_sequences(df, seq_length, predict_length, target_column):
 
 
 
-def get_predict_data(ticker:str, interval: str, seq_length:int):
-
-        stock = yf.Ticker(ticker)
-
-        # Define the period to fetch enough data points
-        interval_to_period = {
-            '1m': '1d',
-            '5m': '5d',
-            '15m': '10d',
-            '1h': '60d',
-            '1d': 'max'
-                }
-        period = interval_to_period.get(interval, '1d')  # Default to '1d' if interval not found
-
-        # Fetch historical data
-        data = stock.history(period=period, interval=interval)
-        # Get the last x candles
-        last_x_candles = data.tail(seq_length)
-            
-        return last_x_candles

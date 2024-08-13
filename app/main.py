@@ -2,9 +2,7 @@
 from fastapi.responses import  JSONResponse, FileResponse
 from typing import List
 from pathlib import Path
-import yfinance as yf
-import model_classes.RNN_model_class as RNN_model_class
-import helper_fct
+import RNN_model_class as RNN_model_class
 import pandas as pd
 import logging
 import os
@@ -18,6 +16,7 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from sklearn.metrics import mean_absolute_error as MAE
 import shutil
+import data_api
 
 app = FastAPI()
 
@@ -73,14 +72,14 @@ async def predict_stock(request: PlotRequest):
 
     mae_dict = {}
     # load prediction data 
-    data = helper_fct.get_predict_data(ticker=ticker, interval='1m', seq_length=60)
+    data = data_api.get_predict_data(ticker=ticker, seq_length=60)
     if data.empty:
         return
-    plot_data = data['Close'].reset_index()
+    plot_data = data[['Datetime','Close']]
 
     # refactor datetime to the same timezone for merging 
-    plot_data['Datetime'] = pd.to_datetime(plot_data['Datetime'], utc=True)
-    plot_data['Datetime'] = plot_data['Datetime'].dt.tz_convert('America/New_York')
+    #plot_data['Datetime'] = pd.to_datetime(plot_data['Datetime'], utc=True)
+    #plot_data['Datetime'] = plot_data['Datetime'].dt.tz_convert('America/New_York')
 
     for model_name in model_list :
         # predict with the model
@@ -97,8 +96,8 @@ async def predict_stock(request: PlotRequest):
     df_plot = pd.DataFrame(all_preds)
 
     # refactor datetime to the same timezone for merging 
-    df_plot['Datetime'] = pd.to_datetime(df_plot['Datetime'], utc=True)
-    df_plot['Datetime'] = df_plot['Datetime'].dt.tz_convert('America/New_York')
+    #df_plot['Datetime'] = pd.to_datetime(df_plot['Datetime'], utc=True)
+    #df_plot['Datetime'] = df_plot['Datetime'].dt.tz_convert('America/New_York')
 
     # merging both dataframes 
     df_plot = df_plot.drop_duplicates(subset=['Datetime', 'Model_name'])               
@@ -144,7 +143,7 @@ async def predict_stock(request: PlotRequest):
 def predict_model( data, model_name):
     # set folder dir for model
     model = RNN_model_class.RNN_model()
-    model.load_model(model_name=model_name,model_db=MODEL_DB_DIR)
+    model.load_model(model_name=model_name,model_db_dir=MODEL_DB_DIR)
     prediction = model.predict(data)
 
     return prediction
@@ -156,14 +155,8 @@ def predict_model( data, model_name):
 async def list_models(ticker: Ticker):
     #reset all_preds for new ticker 
     stock_symbol = ticker.symbol
-
-    yf_Ticker= yf.Ticker(stock_symbol)
-    try: 
-        yf_Ticker.info
-    except:
-         # If symbol doesn't exist, return an error response
-        return JSONResponse(content={"error": "Invalid ticker symbol provided."}, status_code=400)
-
+    logger.debug(f"fetching models for : {stock_symbol}")
+    # check if ticker sybol is valid 
     logger.debug(f"Fetching models for: {stock_symbol}")
 
     
@@ -339,4 +332,4 @@ def manage_folders(base_dir):
 if __name__ == "__main__":
     import uvicorn
  
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000)

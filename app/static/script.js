@@ -1,6 +1,6 @@
 // Predict Button Event Listener
 const btn_predict = document.getElementById('predictButton');
-let modelsData = {'ticker':'', 'model_list':[] , 'mae_dict': []}
+let modelsData = {'ticker':'AAPL', 'model_list':[] , 'mae_dict': []}
 
 if (btn_predict) {
     btn_predict.onclick = async function() {
