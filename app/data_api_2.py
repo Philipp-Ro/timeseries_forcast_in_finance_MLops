@@ -49,13 +49,13 @@ def get_train_data(ticker: str, features_list:List) -> pd.DataFrame:
 
 
 
-def get_predict_data(ticker: str, seq_length: int, features_list:List) -> pd.DataFrame:
+def get_predict_data(ticker: str, seq_length: int) -> pd.DataFrame:
 
     url = f'https://financialmodelingprep.com/api/v3/historical-chart/1min/{ticker}?apikey={API_KEY}'
     
     # Make the API request
     response = requests.get(url)
-    print(response.status_code)
+ 
     if response.status_code == 200:
         data = response.json()
         
@@ -76,10 +76,10 @@ def get_predict_data(ticker: str, seq_length: int, features_list:List) -> pd.Dat
         # get target scaler 
         target_scaler = MinMaxScaler()
         target_scaler.fit(df[['Close']])
-
+        scaler_features = ['Open', 'Close', 'High', 'Low', 'Volume']
         # norm the data
         scaler = MinMaxScaler()
-        df[features_list] = pd.DataFrame(scaler.fit_transform(df[features_list]))
+        df[scaler_features] = pd.DataFrame(scaler.fit_transform(df[scaler_features]))
 
 
         # Keep only the last `seq_length` minutes
@@ -89,7 +89,7 @@ def get_predict_data(ticker: str, seq_length: int, features_list:List) -> pd.Dat
         predict_date = df['Datetime'].iloc[0]  
 
         # . values to convert the DF to an array
-        return df[features_list].values, predict_date, target_scaler
+        return df, predict_date, target_scaler
     
     elif response.status_code == 429:
 

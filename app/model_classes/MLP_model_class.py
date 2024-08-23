@@ -51,13 +51,14 @@ class MLP_model():
         # inti the model parameters
         self.params = params
         self.model = model 
-        self.scaler = MinMaxScaler()
+
         
 
     
     def predict(self, data, pred_date, target_scaler):
-        print(data)
-        features = extract_features(data.values)
+        data = data[self.params['model_params']['features']].values
+      
+        features = extract_features(data)
 
         features = torch.tensor(list(features.values()), dtype=torch.float32)
         features = features.unsqueeze(0)
@@ -169,7 +170,7 @@ class MLP_model():
 
         # create model name
         self.params =train_params
-        model_name =train_params['data_params']['ticker']+f"_model_name_{dt.datetime.now().strftime('%H.%M')}"
+        model_name =train_params['data_params']['ticker']+f"_MLP_{dt.datetime.now().strftime('%H.%M')}"
         self.params['model_params']['model_name'] = model_name
 
         #set model and scalers in object 
@@ -184,21 +185,12 @@ class MLP_model():
         model_name_path = os.path.join(model_db_dir, model_name )
 
         model_path = os.path.join(model_name_path  , 'model.pkl')
-        scaler_X_path = os.path.join(model_name_path  , 'scaler_X.pkl')
-        scaler_Y_path = os.path.join(model_name_path  , 'scaler_Y.pkl')
         yaml_path = os.path.join(model_name_path  , 'params.yaml')
 
                 
         # Load the model
         with open(model_path, 'rb') as f:
             self.model = pickle.load(f)
-
-        # Load Scalers           
-        with open(scaler_X_path, 'rb') as f:
-            self.scaler_X = pickle.load(f)
-                    
-        with open(scaler_Y_path, 'rb') as f:
-            self.scaler_Y = pickle.load(f)
 
         # Load training parameters from YAML file
         with open(yaml_path, 'r') as file:

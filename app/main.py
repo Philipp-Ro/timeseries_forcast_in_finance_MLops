@@ -17,7 +17,7 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from sklearn.metrics import mean_absolute_error as MAE
 import shutil
-import data_api
+import data_api_2
 
 app = FastAPI()
 
@@ -49,6 +49,7 @@ class TrainRequest(BaseModel):
     ticker: str
     num_epochs: int
     forecast_len: int
+    model_type: str
 
 class DeleteModelRequest(BaseModel):
     ticker: str
@@ -72,8 +73,8 @@ async def predict_stock(request: PlotRequest):
 
     mae_dict = {}
     # load prediction data 
-    data = data_api.get_predict_data(ticker=ticker, seq_length=60)
-    
+    data = data_api_2.get_predict_data(ticker=ticker, seq_length=60)
+    data, pred_date, target_scaler = data_api_2.get_predict_data(ticker=ticker, seq_length=60)
     if data.empty:
         logger.debug(f"REQUEST LIMIT from financialmodelingprep.com is full")
         response_content ={"figure": None,
@@ -82,14 +83,12 @@ async def predict_stock(request: PlotRequest):
     
     plot_data = data[['Datetime','Close']]
 
-    # refactor datetime to the same timezone for merging 
-    #plot_data['Datetime'] = pd.to_datetime(plot_data['Datetime'], utc=True)
-    #plot_data['Datetime'] = plot_data['Datetime'].dt.tz_convert('America/New_York')
+
 
     for model_name in model_list :
         # predict with the model
-        prediction = predict_model(data=data, model_name=model_name)
 
+        prediction = predict_model( data, pred_date, target_scaler, model_name)
         all_preds['Datetime'].append(prediction['Datetime'])
         all_preds['Prediction'].append(prediction['Prediction'])
         all_preds['Model_name'].append(model_name)
@@ -145,16 +144,18 @@ async def predict_stock(request: PlotRequest):
     return JSONResponse(content=response_content, status_code=200)
 
 
-def predict_model( data, model_name):
+def predict_model( data, pred_date, target_scaler, model_name):
     if "RNN" in model_name:
         # set folder dir for model
         model = RNN_model_class.RNN_model()
         model.load_model(model_name=model_name,model_db_dir=MODEL_DB_DIR)
-        prediction = model.predict(data)
+        prediction = model.predict(data=data,pred_date=pred_date, target_scaler=target_scaler)
+
     if "MLP" in model_name:
         model = MLP_model_class.MLP_model()
         model.load_model(model_name=model_name,model_db_dir=MODEL_DB_DIR)
-        prediction = model.predict(data)
+        prediction = model.predict(data=data,pred_date=pred_date, target_scaler=target_scaler)
+        
         
     return prediction
 
@@ -195,10 +196,15 @@ def train_model(request:TrainRequest):
     ticker = request.ticker
     forecast_len = request.forecast_len
     num_epochs = request.num_epochs
+    model_type = request.model_type
+
     # Load training parameters from YAML file
     yaml_path = 'train_params.yaml'
     with open(yaml_path, 'r') as file:
         params = yaml.safe_load(file)
+
+   
+
 
     logger.debug(f"Training model for: {ticker}")
     logger.debug(f"Model is trained with {num_epochs} Epochs")
@@ -207,12 +213,14 @@ def train_model(request:TrainRequest):
     params['train_params']['num_epochs'] = num_epochs
     params['model_params']['output_size'] = forecast_len
 
+    if model_type == 'RNN':
+        RNN_model = RNN_model_class.RNN_model()
+        model, params = RNN_model.train_model(train_params=params)
+    if model_type == 'MLP':
+        RNN_model = MLP_model_class.MLP_model()
+        model, params = RNN_model.train_model(train_params=params)
 
-    
-    RNN_model = RNN_model_class.RNN_model()
-    model, scaler_X, scaler_Y, params = RNN_model.train_model(train_params=params)
-
-    save_training(model, scaler_X, scaler_Y, params)
+    save_training(model, params)
 
     return JSONResponse(content={"message": "Model trained successfully!"}, status_code=200)
    
@@ -264,7 +272,7 @@ def plot_predictions(plot_data, model_names):
     return fig
    
 
-def save_training(model, scaler_X, scaler_Y, params):
+def save_training(model, params):
         # before saving a new model check if the Model_db has more than 10 entrys if so delete all models before saving the trained one 
         manage_folders(MODEL_DB_DIR)      
         model_name = params['model_params']['model_name']
@@ -275,12 +283,6 @@ def save_training(model, scaler_X, scaler_Y, params):
         
         with open(f"{models_directory}/model.pkl", 'wb') as f:
             pickle.dump(model, f)
-        
-        with open(f"{models_directory}/scaler_X.pkl", 'wb') as f:
-            pickle.dump(scaler_X, f)
-        
-        with open(f"{models_directory}/scaler_Y.pkl", 'wb') as f:
-            pickle.dump(scaler_Y, f)
 
         # Save training parameters to YAML
         yaml_filename = f"{models_directory}/params.yaml"

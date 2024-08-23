@@ -48,11 +48,10 @@ class RNN_model():
         # init the model parameters
         self.params = params
         self.model = model 
-        self.target_scaler = target_scaler
-
+  
     
     def predict(self, data, pred_date, target_scaler):
-
+        data = data[self.params['model_params']['features']].values
         features = torch.tensor(data, dtype=torch.float32)
         features = features.unsqueeze(0)
         
@@ -171,21 +170,12 @@ class RNN_model():
 
         #set up paths 
         model_path = os.path.join(model_name_path  , 'model.pkl')
-        scaler_X_path = os.path.join(model_name_path  , 'scaler_X.pkl')
-        scaler_Y_path = os.path.join(model_name_path  , 'scaler_Y.pkl')
         yaml_path = os.path.join(model_name_path  , 'params.yaml')
 
                 
         # Load the model
         with open(model_path, 'rb') as f:
             self.model = pickle.load(f)
-
-        # Load Scalers           
-        with open(scaler_X_path, 'rb') as f:
-            self.scaler_X = pickle.load(f)
-                    
-        with open(scaler_Y_path, 'rb') as f:
-            self.scaler_Y = pickle.load(f)
 
         # Load training parameters from YAML file
         with open(yaml_path, 'r') as file:
