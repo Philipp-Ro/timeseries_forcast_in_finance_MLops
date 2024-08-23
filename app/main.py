@@ -2,7 +2,8 @@
 from fastapi.responses import  JSONResponse, FileResponse
 from typing import List
 from pathlib import Path
-import RNN_model_class as RNN_model_class
+import model_classes.RNN_model_class as RNN_model_class
+import model_classes.MLP_model_class as MLP_model_class
 import pandas as pd
 import logging
 import os
@@ -33,7 +34,6 @@ STATIC_DIR = os.path.join(BASE_DIR , "static")
 # set up path for model DB
 MODEL_DB_DIR =os.path.join(BASE_DIR, '..', 'Model_DB')
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
 
 
 
@@ -73,8 +73,13 @@ async def predict_stock(request: PlotRequest):
     mae_dict = {}
     # load prediction data 
     data = data_api.get_predict_data(ticker=ticker, seq_length=60)
+    
     if data.empty:
-        return
+        logger.debug(f"REQUEST LIMIT from financialmodelingprep.com is full")
+        response_content ={"figure": None,
+        "MAE": None}
+        return JSONResponse(content=response_content, status_code=429)
+    
     plot_data = data[['Datetime','Close']]
 
     # refactor datetime to the same timezone for merging 
@@ -141,11 +146,16 @@ async def predict_stock(request: PlotRequest):
 
 
 def predict_model( data, model_name):
-    # set folder dir for model
-    model = RNN_model_class.RNN_model()
-    model.load_model(model_name=model_name,model_db_dir=MODEL_DB_DIR)
-    prediction = model.predict(data)
-
+    if "RNN" in model_name:
+        # set folder dir for model
+        model = RNN_model_class.RNN_model()
+        model.load_model(model_name=model_name,model_db_dir=MODEL_DB_DIR)
+        prediction = model.predict(data)
+    if "MLP" in model_name:
+        model = MLP_model_class.MLP_model()
+        model.load_model(model_name=model_name,model_db_dir=MODEL_DB_DIR)
+        prediction = model.predict(data)
+        
     return prediction
 
 
@@ -209,6 +219,7 @@ def train_model(request:TrainRequest):
 
 
 def plot_predictions(plot_data, model_names):
+    plot_data = plot_data.tail(60)
     # Create a Plotly figure
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -238,7 +249,10 @@ def plot_predictions(plot_data, model_names):
         xaxis_title="Time",
         yaxis_title="Price",
         legend_title="Legend",
-        template="plotly_white"
+        template="plotly_white",
+        autosize=True,  
+        height=None,
+        width=None
     )
 
     # Customize x-axis ticks (rotate labels)

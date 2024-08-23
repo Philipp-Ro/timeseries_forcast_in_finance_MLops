@@ -1,0 +1,12 @@
+model_params:
+  features:
+  - Open
+  - High
+  - Low
+  - Volume
+  - Close
+  hidden_size: 50
+  input_size: 5
+  model_name: None
+  num_layers: 2
+  output_size: 1

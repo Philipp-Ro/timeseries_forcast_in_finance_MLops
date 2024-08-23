@@ -136,7 +136,14 @@ async function refreshImage(modelsData) {
             })
         });
 
-        if (!response.ok) {
+        if (response.status === 429) {
+            console.error('Rate limit exceeded:', error);
+            alert('API requst limit excided for the next 24h ');
+
+            throw new Error('Rate limit exceeded. Please try again later.');
+
+        } else if (!response.ok) {
+            console.error('Rate limit exceeded:', error);
             throw new Error('Network response was not ok.');
         }
 
@@ -152,19 +159,28 @@ async function refreshImage(modelsData) {
         
     } catch (error) {
         console.error('Error refreshing plot:', error);
-        alert('Please enter valid ticker');
     }
     isRefreshing = false;
 }
 
 // Refresh every 10s
+let refreshCount = 0;
+const maxRefreshes = 10;  // Set the maximum number of refreshes
+
 const intervalId = setInterval(async () => {
     const tickerInput = document.getElementById('ticker').value;
-    const modelData = await fetchModels( tickerInput );
+    const modelData = await fetchModels(tickerInput);
+    
     if (modelData) {
         await refreshImage(modelData);
     }
-}, 10000);
+    
+    refreshCount++;  // Increment the counter after each refresh
+    
+    if (refreshCount >= maxRefreshes) {
+        clearInterval(intervalId);  // Stop the interval after 10 refreshes
+    }
+}, 60000);  // 10 seconds (10000 milliseconds) interval
 
 // Handling new model training modal
 const btn_train = document.getElementById("trainNewModelButton");

@@ -8,26 +8,29 @@ from sklearn.preprocessing import MinMaxScaler
 import numpy as np 
 import torch.optim as optim
 import pandas as pd
-import data_api
+import data_api_2
 
-class RNN_price_predictor(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, output_size):
-        super(RNN_price_predictor, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, output_size)
+class MLP_predictor(nn.Module):
+    def __init__(self, input_size, hidden_size=64, output_size=1):
+        super(MLP_predictor, self).__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, output_size)
     
     def forward(self, x):
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
-        out, _ = self.rnn(x, h0)
-        out = self.fc(out[:, -1, :])
-        return out
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.relu(x)
+        x = self.fc3(x)
+        return x
+
     
 ###### structure of params ###########
 # data_params:
 # - ticker (string) -> ticker name as 'AAPL'
-# - interval (str) -> string for candle width here 1m for one imnute
+# - interval (str) -> string for candle width here 1m for one minute
 # - num_days(int) -> number of days back in the training set 
 # - seq_len (int) -> length of sequence for prediction here 60
 # - predict_length (int) -> length of prediction here 1 but you can also increase 
@@ -42,86 +45,85 @@ class RNN_price_predictor(nn.Module):
 # - hidden_size (int) -> number hof hidden neurons her 50 
 # - num_layers (int) -> number of layers number of layers in RNN here 2
 # - output_size (int) -> dimension of output here 1 ['Close']
-class RNN_model():
+class MLP_model():
     def __init__(self, params=None, model=None, scaler_X=None, scaler_Y=None):
-        super(RNN_model, self).__init__()  
+        super(MLP_model, self).__init__()  
         # inti the model parameters
         self.params = params
-        #self.model_params =params['model_params']
-        #self.data_params = params['data_params']
-        #self.train_params = params['train_params']
-
         self.model = model 
-        self.scaler_X = scaler_X
-        self.scaler_Y = scaler_Y 
+        self.scaler = MinMaxScaler()
+        
 
     
-    def predict(self, data_df):
-        # Get features
-        features = data_df[self.params['model_params']["features"]]
-        
-        # Scale features
-        features[features.columns] = self.scaler_X.transform(features[features.columns])
-        
-        # Prepare for prediction
-        features = features.values
-        features = torch.tensor(features, dtype=torch.float32)
+    def predict(self, data, pred_date, target_scaler):
+        print(data)
+        features = extract_features(data.values)
+
+        features = torch.tensor(list(features.values()), dtype=torch.float32)
         features = features.unsqueeze(0)
         
         self.model.eval()
 
         with torch.no_grad():
             # Predict
-            new_prediction = self.model(features)
-            # Inverse scale
-            new_prediction = self.scaler_Y.inverse_transform(new_prediction.numpy())
-            
-        # Get timecode for prediction
-        latest_row = data_df.iloc[0]  
-        current_time = pd.to_datetime(latest_row['Datetime'])  
+            prediction = self.model(features)
+            pred_price = target_scaler.inverse_transform(prediction)
+
+
+        current_time = pd.to_datetime(pred_date)  
         
         # Adjust for different candle size
         predict_time = current_time + dt.timedelta(minutes=self.params['model_params']['output_size'])
         
         # Return just the last value in the forecast list
         # This is the value corresponding to the timestamp
-        return {'Datetime': predict_time, 'Prediction': new_prediction[0][-1]}
+        return {'Datetime': predict_time, 'Prediction': pred_price[0][-1]}
         
 
         
     def train_model(self, train_params):
    
-        df,start_date_train, end_date_train = data_api.get_train_data(ticker=train_params['data_params']['ticker'])
-      
-        # normalizing the output
-        df_target = df[['Close']]
-        scaler_Y = MinMaxScaler()
-        scaler_Y = scaler_Y.fit(df_target[df_target.columns])
+        df,start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
+                                                                        features_list=train_params['model_params']["features"])
+       
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # normalizing the input 
-        df = df[train_params['model_params']["features"]]
-        scaler_X = MinMaxScaler()
-        scaler_X = scaler_X.fit(df[df.columns])
-        df[df.columns]= scaler_X.transform(df[df.columns])
+        yaml_path = os.path.join(current_file_dir,'MLP_params.yaml')
+        with open(yaml_path, 'r') as file:
+            model_params = yaml.safe_load(file)
+
+        train_params['model_params'] =model_params['model_params']
+
      
         #Create sequences
-        sequences, targets = create_sequences(df, seq_length=train_params['data_params']['seq_length'], predict_length=train_params['data_params']['predict_length'], target_column=train_params['data_params']['target_column'])
+        sequences, targets = data_api_2.create_sequences(df, 
+                                                         seq_length=train_params['data_params']['seq_length'], 
+                                                         predict_length=train_params['data_params']['predict_length'], 
+                                                         target_column=train_params['data_params']['target_column'])
+        feature_matrix = []
+
+        for x in sequences:
+            new_features = extract_features(x) 
+            feature_matrix.append(list(new_features.values()))
         
+
+
         # Split into training and testing sets 80% Train 20% Test
-        train_size = int(len(sequences) * 0.8)
-        train_sequences = sequences[:train_size]
+        train_size = int(len(feature_matrix) * 0.8)
+        train_feature_matrix = feature_matrix[:train_size]
         train_targets = targets[:train_size]
-        test_sequences = sequences[train_size:]
+        test_feature_matrix = feature_matrix[train_size:]
         test_targets = targets[train_size:]
 
         # Convert to PyTorch tensors
-        X_train= torch.tensor(train_sequences, dtype=torch.float32)
+        X_train= torch.tensor(train_feature_matrix, dtype=torch.float32)
         Y_train = torch.tensor(train_targets, dtype=torch.float32)
-        X_test= torch.tensor(test_sequences, dtype=torch.float32)
+        X_test= torch.tensor(test_feature_matrix, dtype=torch.float32)
         Y_test= torch.tensor(test_targets, dtype=torch.float32)
        
         # intt model optimizer and lossfct
-        model = RNN_price_predictor(train_params['model_params']['input_size'], train_params['model_params']['hidden_size'], train_params['model_params']['num_layers'], train_params['model_params']['output_size'])
+
+        model = MLP_predictor(model_params['model_params']['input_size'], model_params['model_params']['hidden_size'], model_params['model_params']['output_size'])
         optimizer = optim.Adam(model.parameters(), lr=train_params['train_params']['lr'])
         criterion = nn.MSELoss()
 
@@ -135,11 +137,13 @@ class RNN_model():
         model.train()
         for epoch in range(num_epochs):
             # forward pass
+ 
             outputs = model(X_train)
 
 
             #optimizer.zero_grad()
             #calculate loss 
+
             train_loss = criterion(outputs[:,-1], Y_train)
             train_loss_per_epoch.append(train_loss.item())
 
@@ -154,29 +158,25 @@ class RNN_model():
                 test_outputs = model(X_test)
                 test_loss = criterion(test_outputs[:,-1], Y_test)
                 test_loss_per_epoch.append(test_loss.item())
-
-            if (epoch+1) % 10 == 0:
-                print(f'Epoch [{epoch+1}/{num_epochs}], Train_Loss: {train_loss.item():.4f}')
-                print(f'Epoch [{epoch+1}/{num_epochs}], Test_Loss: {test_loss.item():.4f}')
                 
-
+        # safe train and test eval 
         train_params['train_params']['train_loss_per_epoch'] = train_loss_per_epoch
         train_params['train_params']['test_loss_per_epoch'] = test_loss_per_epoch
+
         # Convert to string and save the timestamp for first and last candle
         train_params['train_params']['start_date_train'] = start_date_train.isoformat()
         train_params['train_params']['end_date_train'] = end_date_train.isoformat()
 
         # create model name
         self.params =train_params
-        model_name =train_params['data_params']['ticker']+f"_RNN_{dt.datetime.now().strftime('%H.%M')}"
+        model_name =train_params['data_params']['ticker']+f"_model_name_{dt.datetime.now().strftime('%H.%M')}"
         self.params['model_params']['model_name'] = model_name
 
         #set model and scalers in object 
         self.model = model
-        self.scaler_X = scaler_X
-        self.scaler_Y = scaler_Y
+
         
-        return model, scaler_X, scaler_Y, self.params
+        return model, self.params
     
 
     def load_model( self, model_name:str, model_db_dir:str):
@@ -205,20 +205,38 @@ class RNN_model():
             self.params = yaml.safe_load(file)
 
 
+def extract_features(price_data):
 
+    price_data = price_data.flatten()
 
-def create_sequences(df, seq_length:int, predict_length:int, target_column:str):
-    sequences = []
-    targets = []
-   
-    target_idx = df.columns.get_loc(target_column)
-    data =df.values
-    for i in range(len(data) - seq_length - predict_length ):
-        sequence = data[i:i + seq_length]
-        target = data[i + seq_length+predict_length, target_idx]
-        sequences.append(sequence)
-        targets.append(target)
-    return np.array(sequences), np.array(targets)
+    # Ensure the sequence is a Pandas Series for easier calculation
+    seq = pd.Series(price_data)
+    
+    # Initialize a dictionary to store the features
+    features = {}
+
+    # Calculate Simple Moving Averages (SMA)
+    features['SMA_5'] = seq.rolling(window=5).mean().iloc[-1]
+    features['SMA_20'] = seq.rolling(window=20).mean().iloc[-1]
+    features['SMA_50'] = seq.rolling(window=50).mean().iloc[-1]
+
+    # Calculate Bollinger Bands
+    rolling_mean = seq.rolling(window=20).mean().iloc[-1]
+    rolling_std = seq.rolling(window=20).std().iloc[-1]
+    features['Bollinger_Upper'] = rolling_mean + (rolling_std * 2)
+    features['Bollinger_Lower'] = rolling_mean - (rolling_std * 2)
+
+    # Calculate Relative Strength Index (RSI)
+    delta = seq.diff()
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    avg_gain = pd.Series(gain).rolling(window=14).mean().iloc[-1]
+    avg_loss = pd.Series(loss).rolling(window=14).mean().iloc[-1]
+    rs = avg_gain / avg_loss
+    features['RSI_14'] = 100 - (100 / (1 + rs))
+
+    return features
+
 
 
 

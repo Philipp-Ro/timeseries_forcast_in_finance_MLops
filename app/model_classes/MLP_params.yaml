@@ -1,0 +1,7 @@
+model_params:
+  features:
+  - Close
+  hidden_size: 50
+  input_size: 6
+  model_name: None
+  output_size: 1
