@@ -220,14 +220,16 @@ if (trainForm) {
         const ticker = document.getElementById('train_ticker').value;
         const num_epochs = document.getElementById('num_epochs').value;
         const forecast_len = document.getElementById('forecast_len').value;
-
+        const model_type = document.getElementById('model_type').value;
+        
         modal.style.display = "none";
 
         // Show waiting screen
         if (waitingScreen) {
             waitingScreen.style.display = "block";
         }
-
+        console.log(model_type)
+        
         try {
             const response = await fetch('/train_new_model/', {
                 method: 'POST',
@@ -237,7 +239,8 @@ if (trainForm) {
                 body: JSON.stringify({
                     "ticker": ticker,
                     "num_epochs": num_epochs,
-                    "forecast_len": forecast_len
+                    "forecast_len": forecast_len,
+                    "model_type":model_type
                 })
             });
 

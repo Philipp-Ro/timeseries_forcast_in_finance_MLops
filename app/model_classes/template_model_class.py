@@ -8,105 +8,131 @@ from sklearn.preprocessing import MinMaxScaler
 import numpy as np 
 import torch.optim as optim
 import pandas as pd
-import data_api
+import data_api_2
 
 class torch_model(nn.Module):
-    def __init__(self, model_specs):
+    def __init__(self, input_size, hidden_size=64, output_size=1):
         super(torch_model, self).__init__()
-        # init toch model 
+        # init the layers of the model 
     
     def forward(self, x):
-        # code forward pass
-        out = None
-        return out
-    
-###### structure of params ###########
-# data_params:
-# - ticker (string) -> ticker name as 'AAPL'
-# - interval (str) -> string for candle width here 1m for one minute
-# - num_days(int) -> number of days back in the training set 
-# - seq_len (int) -> length of sequence for prediction here 60
-# - predict_length (int) -> length of prediction here 1 but you can also increase 
-# - target_column (string) -> name of prediction column
-#
-# train_params:
-# - lr (float) -> learning rate in float 0.001
-# - num_epochs (int) -> number of epochs for train 100  
-#
-# model_params:
-# - input_size (int) -> dimension of input size here 5 ['Open', 'High', 'Low', 'Volume', 'Close']
-# - hidden_size (int) -> number hof hidden neurons her 50 
-# - num_layers (int) -> number of layers number of layers in RNN here 2
-# - output_size (int) -> dimension of output here 1 ['Close']
-class name_model():
-    def __init__(self, params=None, model=None, scaler_X=None, scaler_Y=None):
-        super(name_model, self).__init__()  
+        # create forward path 
+        return x
+
+
+
+class MLP_model():
+    def __init__(self, params=None, model=None):
+        super(MLP_model, self).__init__()  
         # inti the model parameters
         self.params = params
         self.model = model 
-        self.scaler_X = scaler_X
-        self.scaler_Y = scaler_Y 
 
-    
-    def predict(self, data_df):
-        # Get features
-        features = data_df[self.params['model_params']["features"]]
-        
-        # Scale features
+    ###### structure of  model_params.yaml ######
+    # model_params:
+    # - model_name('str') -> modelname default None 
+    # - features(List) -> list of columns relevant for the model from the raw data [['Close','Volume']]
+    # - input_size (int) -> dimension of input size here 5 ['Open', 'High', 'Low', 'Volume', 'Close']
+    # - output_size (int) -> dimension of output here 1 ['Close']
+    # - model specific settings like 
+    #       - hidden_size (int) -> number hof hidden neurons her 50 
+    #       - num_layers (int) -> number of layers number of layers in RNN here 2
 
-        # add manual feature extraction if nesserary
-        
-        # Prepare for prediction
-        features = features.values
-        features = torch.tensor(features, dtype=torch.float32)
+    def predict(self, data, pred_date, target_scaler):
+        # predicting on the given data 
+        # input:
+        # data : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # pred_date: pandas dateime obj of the last candle in the prediction 
+        # target_scaler: a sklearn_scaler to inversesclae the prediction of the model
+        # output 
+        # dictionary : {'Datetime': predict_time, 'Prediction': pred_price} 
+
+        data = data[self.params['model_params']['features']].values
+      
+        # add feature extraction either a feature engineering or keeing the raw data as model input  
+
+        features = torch.tensor(list(features.values()), dtype=torch.float32)
         features = features.unsqueeze(0)
         
         self.model.eval()
 
         with torch.no_grad():
             # Predict
-            new_prediction = self.model(features)
-            # Inverse scale
-            new_prediction = self.scaler_Y.inverse_transform(new_prediction.numpy())
-            
-        # Get timecode for prediction
-        latest_row = data_df.iloc[0]  
-        current_time = pd.to_datetime(latest_row['Datetime'])  
-        
-        # Adjust for different candle size
+            prediction = self.model(features)
+            pred_price = target_scaler.inverse_transform(prediction)
+
+        # create prediction time 
+        current_time = pd.to_datetime(pred_date)  
         predict_time = current_time + dt.timedelta(minutes=self.params['model_params']['output_size'])
         
         # Return just the last value in the forecast list
         # This is the value corresponding to the timestamp
-        return {'Datetime': predict_time, 'Prediction': new_prediction[0][-1]}
+        return {'Datetime': predict_time, 'Prediction': pred_price[0][-1]}
         
-
+    ###### structure of  training_params.yaml ######
+    # data_params:
+    # - ticker (string) -> ticker name as 'AAPL'
+    # - interval (str) -> string for candle width here 1m for one minute
+    # - num_days(int) -> number of days back in the training set 
+    # - seq_len (int) -> length of sequence for prediction here 60
+    # - predict_length (int) -> length of prediction here 1 but you can also increase 
+    # - target_column (string) -> name of prediction column
+    # train_params:
+    # - lr (float) -> learning rate in float 0.001
+    # - num_epochs (int) -> number of epochs for train 100  
         
     def train_model(self, train_params):
-   
-        df,start_date_train, end_date_train = data_api.get_train_data(ticker=train_params['data_params']['ticker'])
-      
+        # train a new model 
+        # input:
+        # train_params.yaml 
+        # output 
+        # trained model ,  self.params 
 
-        #Create sequences
-        sequences, targets = data_api.create_sequences(df, seq_length=train_params['data_params']['seq_length'], predict_length=train_params['data_params']['predict_length'], target_column=train_params['data_params']['target_column'])
+        # get train data :
+        # df : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # start_date_train: pandas dateime obj of the first candle in the training 
+        # end_date_train: pandas dateime obj of the last candle in the training 
+        df, start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
+                                                                        features_list=train_params['model_params']["features"])
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # load model sprecific specs 
+        yaml_path = os.path.join(current_file_dir,'MLP_params.yaml')
+        with open(yaml_path, 'r') as file:
+            model_params = yaml.safe_load(file)
+
+        train_params['model_params'] =model_params['model_params']
+
+     
+        # Create sequences for training 
+        # sequneces: List of Dataframes len(60) columns = ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # tragets : Dataframe of corresponding target prices columns =['Datetime', 'Close']
+        sequences, targets = data_api_2.create_sequences(df, 
+                                                         seq_length=train_params['data_params']['seq_length'], 
+                                                         predict_length=train_params['data_params']['predict_length'], 
+                                                         target_column=train_params['data_params']['target_column'])
+        feature_matrix = []
+
+        # if nessasery extract featurematrix
+        for x in sequences:
+            new_features = extract_features(x) 
+            feature_matrix.append(list(new_features.values()))
         
-        # add feature engineering if model requires it 
-
         # Split into training and testing sets 80% Train 20% Test
-        train_size = int(len(sequences) * 0.8)
-        train_sequences = sequences[:train_size]
+        train_size = int(len(feature_matrix) * 0.8)
+        train_feature_matrix = feature_matrix[:train_size]
         train_targets = targets[:train_size]
-        test_sequences = sequences[train_size:]
+        test_feature_matrix = feature_matrix[train_size:]
         test_targets = targets[train_size:]
 
         # Convert to PyTorch tensors
-        X_train= torch.tensor(train_sequences, dtype=torch.float32)
+        X_train= torch.tensor(train_feature_matrix, dtype=torch.float32)
         Y_train = torch.tensor(train_targets, dtype=torch.float32)
-        X_test= torch.tensor(test_sequences, dtype=torch.float32)
+        X_test= torch.tensor(test_feature_matrix, dtype=torch.float32)
         Y_test= torch.tensor(test_targets, dtype=torch.float32)
        
-        # intt model optimizer and lossfct
-        model = torch_model(train_params['model_params']['input_size'], train_params['model_params']['hidden_size'], train_params['model_params']['num_layers'], train_params['model_params']['output_size'])
+        # intit model optimizer and lossfct
+        model = torch_model (model_params['model_params']['input_size'], model_params['model_params']['hidden_size'], model_params['model_params']['output_size'])
         optimizer = optim.Adam(model.parameters(), lr=train_params['train_params']['lr'])
         criterion = nn.MSELoss()
 
@@ -114,6 +140,7 @@ class name_model():
         train_loss_per_epoch = []
         test_loss_per_epoch = []
         
+
         # Training loop
         num_epochs = train_params['train_params']['num_epochs']
         model.train()
@@ -121,7 +148,7 @@ class name_model():
             # forward pass
             outputs = model(X_train)
 
-            #calculate loss 
+            # calculate loss
             train_loss = criterion(outputs[:,-1], Y_train)
             train_loss_per_epoch.append(train_loss.item())
 
@@ -136,7 +163,6 @@ class name_model():
                 test_outputs = model(X_test)
                 test_loss = criterion(test_outputs[:,-1], Y_test)
                 test_loss_per_epoch.append(test_loss.item())
-
                 
         # safe train and test eval 
         train_params['train_params']['train_loss_per_epoch'] = train_loss_per_epoch
@@ -148,24 +174,24 @@ class name_model():
 
         # create model name
         self.params =train_params
-        model_name =train_params['data_params']['ticker']+f"_model_name_{dt.datetime.now().strftime('%H.%M')}"
+        model_name =train_params['data_params']['ticker']+f"_MLP_{dt.datetime.now().strftime('%H.%M')}"
         self.params['model_params']['model_name'] = model_name
 
         #set model and scalers in object 
         self.model = model
-        self.scaler_X = scaler_X
-        self.scaler_Y = scaler_Y
+
         
-        return model, scaler_X, scaler_Y, self.params
+        return model, self.params
     
 
     def load_model( self, model_name:str, model_db_dir:str):
-     
+        # safe the training in the Model_DB
+        # the model and the params are safed in a new folder with the model name
+        # model_name = <ticker>_<model_type>_< h:min trainstart>
+        # model_name = AAPL_MLP_10.43
         model_name_path = os.path.join(model_db_dir, model_name )
 
         model_path = os.path.join(model_name_path  , 'model.pkl')
-        scaler_X_path = os.path.join(model_name_path  , 'scaler_X.pkl')
-        scaler_Y_path = os.path.join(model_name_path  , 'scaler_Y.pkl')
         yaml_path = os.path.join(model_name_path  , 'params.yaml')
 
                 
@@ -173,18 +199,15 @@ class name_model():
         with open(model_path, 'rb') as f:
             self.model = pickle.load(f)
 
-        # Load Scalers           
-        with open(scaler_X_path, 'rb') as f:
-            self.scaler_X = pickle.load(f)
-                    
-        with open(scaler_Y_path, 'rb') as f:
-            self.scaler_Y = pickle.load(f)
-
         # Load training parameters from YAML file
         with open(yaml_path, 'r') as file:
             self.params = yaml.safe_load(file)
 
 
+def extract_features(price_data):
+    # write feature extraction 
+
+    return features
 
 
 

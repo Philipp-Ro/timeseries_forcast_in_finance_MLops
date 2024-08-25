@@ -82,7 +82,7 @@ async def predict_stock(request: PlotRequest):
         return JSONResponse(content=response_content, status_code=429)
     
     plot_data = data[['Datetime','Close']]
-
+    plot_data[['Close']] = target_scaler.inverse_transform(plot_data[['Close']])
 
 
     for model_name in model_list :
@@ -99,15 +99,10 @@ async def predict_stock(request: PlotRequest):
     # date          prediction_model A      prediction_model B        actual_price
     df_plot = pd.DataFrame(all_preds)
 
-    # refactor datetime to the same timezone for merging 
-    #df_plot['Datetime'] = pd.to_datetime(df_plot['Datetime'], utc=True)
-    #df_plot['Datetime'] = df_plot['Datetime'].dt.tz_convert('America/New_York')
-
     # merging both dataframes 
     df_plot = df_plot.drop_duplicates(subset=['Datetime', 'Model_name'])               
     pivoted_df = df_plot.pivot(index='Datetime', columns='Model_name', values='Prediction').reset_index()
     plot_data = pd.merge(pivoted_df, plot_data, on="Datetime", how='outer').sort_values(by='Datetime').reset_index(drop=True)
-
 
     # Iterate over model columns
     for model_col in [col for col in plot_data.columns if col in model_list]:
@@ -160,8 +155,6 @@ def predict_model( data, pred_date, target_scaler, model_name):
     return prediction
 
 
-
-
 @app.post("/fetchmodels")
 async def list_models(ticker: Ticker):
     #reset all_preds for new ticker 
@@ -187,24 +180,18 @@ async def list_models(ticker: Ticker):
     return JSONResponse(content=response_content, status_code=200)
      
 
-
-        
-
-
 @app.post("/train_new_model/")
 def train_model(request:TrainRequest):
+    
     ticker = request.ticker
     forecast_len = request.forecast_len
     num_epochs = request.num_epochs
     model_type = request.model_type
-
+    logger.debug(f"train model form: {model_type}")  
     # Load training parameters from YAML file
     yaml_path = 'train_params.yaml'
     with open(yaml_path, 'r') as file:
         params = yaml.safe_load(file)
-
-   
-
 
     logger.debug(f"Training model for: {ticker}")
     logger.debug(f"Model is trained with {num_epochs} Epochs")

@@ -103,7 +103,7 @@ def create_sequences(data, seq_length:int, predict_length:int, target_column:str
     targets_norm  = []
 
     targets_all = data[[target_column]]
-    #for i in range(3):
+
     for i in range(len(data) - seq_length-predict_length ):    
         # extract sequence of length seq_length 
         sequence = data[i:i + seq_length].reset_index(drop=True)

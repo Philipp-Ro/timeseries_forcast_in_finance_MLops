@@ -181,3 +181,20 @@ button[type="submit"]:hover {
     color: #333;
     margin-top: 10px;
 }
+/* Dropdown Styles */
+select {
+    width: calc(100% - 22px);
+    padding: 10px;
+    margin: 5px 0 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+    box-sizing: border-box;
+    transition: border-color 0.3s;
+    background-color: #fff;
+}
+
+select:focus {
+    border-color: #007bb5;
+    outline: none;
+}

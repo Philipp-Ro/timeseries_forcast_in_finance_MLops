@@ -24,33 +24,31 @@ class RNN_price_predictor(nn.Module):
         out = self.fc(out[:, -1, :])
         return out
     
-###### structure of params ###########
-# data_params:
-# - ticker (string) -> ticker name as 'AAPL'
-# - interval (str) -> string for candle width here 1m for one imnute
-# - num_days(int) -> number of days back in the training set 
-# - seq_len (int) -> length of sequence for prediction here 60
-# - predict_length (int) -> length of prediction here 1 but you can also increase 
-# - target_column (string) -> name of prediction column
-#
-# train_params:
-# - lr (float) -> learning rate in float 0.001
-# - num_epochs (int) -> number of epochs for train 100  
-#
-# model_params:
-# - input_size (int) -> dimension of input size here 5 ['Open', 'High', 'Low', 'Volume', 'Close']
-# - hidden_size (int) -> number hof hidden neurons her 50 
-# - num_layers (int) -> number of layers number of layers in RNN here 2
-# - output_size (int) -> dimension of output here 1 ['Close']
+
 class RNN_model():
-    def __init__(self, params=None, model=None, target_scaler=None):
+    def __init__(self, params=None, model=None):
         super(RNN_model, self).__init__()  
         # init the model parameters
         self.params = params
         self.model = model 
-  
+
+    ###### structure of  model_params.yaml ######
+    # model_params:
+    # - model_name('str') -> modelname default None 
+    # - features(List) -> list of columns relevant for the model from the raw data [['Close','Volume']]
+    # - input_size (int) -> dimension of input size here 5 ['Open', 'High', 'Low', 'Volume', 'Close']
+    # - output_size (int) -> dimension of output here 1 ['Close']
+    # - hidden_size (int) -> number hof hidden neurons her 50 
+    # - num_layers (int) -> number of layers number of layers in RNN here 2
     
     def predict(self, data, pred_date, target_scaler):
+        # predicting on the given data 
+        # input:
+        # data : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # pred_date: pandas dateime obj of the last candle in the prediction 
+        # target_scaler: a sklearn_scaler to inversesclae the prediction of the model
+        # output 
+        # dictionary : {'Datetime': predict_time, 'Prediction': pred_price} 
         data = data[self.params['model_params']['features']].values
         features = torch.tensor(data, dtype=torch.float32)
         features = features.unsqueeze(0)
@@ -60,8 +58,7 @@ class RNN_model():
         with torch.no_grad():
             # Predict
             prediction = self.model(features)
-
-            
+            # inverse scale price 
             pred_price = target_scaler.inverse_transform(prediction)
 
         current_time = pd.to_datetime(pred_date)  
@@ -74,23 +71,41 @@ class RNN_model():
         return {'Datetime': predict_time, 'Prediction': pred_price[0][-1]}
         
 
-        
+    ###### structure of  training_params.yaml ######
+    # data_params:
+    # - ticker (string) -> ticker name as 'AAPL'
+    # - interval (str) -> string for candle width here 1m for one minute
+    # - num_days(int) -> number of days back in the training set 
+    # - seq_len (int) -> length of sequence for prediction here 60
+    # - predict_length (int) -> length of prediction here 1 but you can also increase 
+    # - target_column (string) -> name of prediction column
+    # train_params:
+    # - lr (float) -> learning rate in float 0.001
+    # - num_epochs (int) -> number of epochs for train 100     
     def train_model(self, train_params):
+        # train a new model 
+        # input:
+        # train_params.yaml 
+        # output 
+        # trained model ,  self.params 
+
+        # get train data :
+        # df : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # start_date_train: pandas dateime obj of the first candle in the training 
+        # end_date_train: pandas dateime obj of the last candle in the training 
    
         df,start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
                                                                         features_list=train_params['model_params']["features"])
 
         # load RNN model params
         current_file_dir = os.path.dirname(os.path.abspath(__file__))
-
         yaml_path = os.path.join(current_file_dir,'RNN_params.yaml')
+
         with open(yaml_path, 'r') as file:
             model_params = yaml.safe_load(file)
 
         train_params['model_params'] = model_params['model_params']
       
-
-     
         #Create sequences
         sequences, targets = data_api_2.create_sequences(df, 
                                                          seq_length=train_params['data_params']['seq_length'], 
@@ -105,7 +120,6 @@ class RNN_model():
         test_targets = targets[train_size:]
 
         # Convert to PyTorch tensors
-        # . values to convert the DF to an array
         X_train= torch.tensor(train_sequences, dtype=torch.float32)
         Y_train = torch.tensor(train_targets, dtype=torch.float32)
         X_test= torch.tensor(test_sequences, dtype=torch.float32)
@@ -164,8 +178,13 @@ class RNN_model():
         return model, self.params
     
 
+
     def load_model( self, model_name:str, model_db_dir:str):
-     
+        # safe the training in the Model_DB
+        # the model and the params are safed in a new folder with the model name
+        # model_name = <ticker>_<model_type>_< h:min trainstart>
+        # model_name = AAPL_MLP_10.43
+        
         model_name_path = os.path.join(model_db_dir, model_name )
 
         #set up paths 

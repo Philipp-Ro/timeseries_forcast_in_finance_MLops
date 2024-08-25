@@ -27,35 +27,31 @@ class MLP_predictor(nn.Module):
         return x
 
     
-###### structure of params ###########
-# data_params:
-# - ticker (string) -> ticker name as 'AAPL'
-# - interval (str) -> string for candle width here 1m for one minute
-# - num_days(int) -> number of days back in the training set 
-# - seq_len (int) -> length of sequence for prediction here 60
-# - predict_length (int) -> length of prediction here 1 but you can also increase 
-# - target_column (string) -> name of prediction column
-#
-# train_params:
-# - lr (float) -> learning rate in float 0.001
-# - num_epochs (int) -> number of epochs for train 100  
-#
-# model_params:
-# - input_size (int) -> dimension of input size here 5 ['Open', 'High', 'Low', 'Volume', 'Close']
-# - hidden_size (int) -> number hof hidden neurons her 50 
-# - num_layers (int) -> number of layers number of layers in RNN here 2
-# - output_size (int) -> dimension of output here 1 ['Close']
+
 class MLP_model():
-    def __init__(self, params=None, model=None, scaler_X=None, scaler_Y=None):
+    def __init__(self, params=None, model=None):
         super(MLP_model, self).__init__()  
         # inti the model parameters
         self.params = params
         self.model = model 
 
         
+    ###### structure of  model_params.yaml ######
+    # model_params:
+    # - model_name('str') -> modelname default None 
+    # - features(List) -> list of columns relevant for the model from the raw data [['Close','Volume']]
+    # - input_size (int) -> dimension of input size here 5 ['Open', 'High', 'Low', 'Volume', 'Close']
+    # - output_size (int) -> dimension of output here 1 ['Close']
+    # - hidden_size (int) -> number hof hidden neurons her 50 
 
-    
     def predict(self, data, pred_date, target_scaler):
+        # predicting on the given data 
+        # input:
+        # data : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # pred_date: pandas dateime obj of the last candle in the prediction 
+        # target_scaler: a sklearn_scaler to inversesclae the prediction of the model
+        # output 
+        # dictionary : {'Datetime': predict_time, 'Prediction': pred_price} 
         data = data[self.params['model_params']['features']].values
       
         features = extract_features(data)
@@ -80,9 +76,29 @@ class MLP_model():
         # This is the value corresponding to the timestamp
         return {'Datetime': predict_time, 'Prediction': pred_price[0][-1]}
         
-
+    ###### structure of  training_params.yaml ######
+    # data_params:
+    # - ticker (string) -> ticker name as 'AAPL'
+    # - interval (str) -> string for candle width here 1m for one minute
+    # - num_days(int) -> number of days back in the training set 
+    # - seq_len (int) -> length of sequence for prediction here 60
+    # - predict_length (int) -> length of prediction here 1 but you can also increase 
+    # - target_column (string) -> name of prediction column
+    # train_params:
+    # - lr (float) -> learning rate in float 0.001
+    # - num_epochs (int) -> number of epochs for train 100  
         
     def train_model(self, train_params):
+        # train a new model 
+        # input:
+        # train_params.yaml 
+        # output 
+        # trained model ,  self.params 
+
+        # get train data :
+        # df : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # start_date_train: pandas dateime obj of the first candle in the training 
+        # end_date_train: pandas dateime obj of the last candle in the training 
    
         df,start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
                                                                         features_list=train_params['model_params']["features"])
@@ -107,8 +123,6 @@ class MLP_model():
             new_features = extract_features(x) 
             feature_matrix.append(list(new_features.values()))
         
-
-
         # Split into training and testing sets 80% Train 20% Test
         train_size = int(len(feature_matrix) * 0.8)
         train_feature_matrix = feature_matrix[:train_size]
@@ -141,10 +155,6 @@ class MLP_model():
  
             outputs = model(X_train)
 
-
-            #optimizer.zero_grad()
-            #calculate loss 
-
             train_loss = criterion(outputs[:,-1], Y_train)
             train_loss_per_epoch.append(train_loss.item())
 
@@ -176,12 +186,15 @@ class MLP_model():
         #set model and scalers in object 
         self.model = model
 
-        
         return model, self.params
     
 
     def load_model( self, model_name:str, model_db_dir:str):
-     
+        # safe the training in the Model_DB
+        # the model and the params are safed in a new folder with the model name
+        # model_name = <ticker>_<model_type>_< h:min trainstart>
+        # model_name = AAPL_MLP_10.43
+        
         model_name_path = os.path.join(model_db_dir, model_name )
 
         model_path = os.path.join(model_name_path  , 'model.pkl')

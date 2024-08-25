@@ -5,18 +5,6 @@ data_params:
   seq_length: 60
   target_column: Close
   ticker: None
-model_params:
-  features:
-  - Open
-  - High
-  - Low
-  - Volume
-  - Close
-  hidden_size: 50
-  input_size: 5
-  model_name: None
-  num_layers: 2
-  output_size: 1
 train_params:
   lr: 0.001
   num_epochs: 100

@@ -14,14 +14,14 @@
         <p>
             This project is designed as a fully containerized MLOps pipeline deployed on an AWS EC2 instance. 
             You can choose a stock symbol and view the available models in the database. 
-            If no models are found, you can train an RNN model on the minute-by-minute closing prices. 
+            If no models are found, you can train an RNN or MLP model on the minute-by-minute closing prices. 
             Once the actual price reaches the forecast length of your model, the Mean Absolute Error (MAE) 
             is automatically calculated and continuously updated.
         </p>
         
         <p>
-            The project is structured to easily expand the pipeline with additional model architectures 
-            and more advanced training configurations. The source code is available 
+            The project is utilised using javaScript,FastApi, Pytorch and Docker structured to easily expand the pipeline with additional model architectures 
+            and more advanced training configurations. The source code and Documentation is available 
             <a href="https://github.com/Philipp-Ro/timeseries_forcast_in_finance_MLops">here</a>.
         </p>
         
@@ -61,6 +61,14 @@
                 <div class="form-group">
                     <label for="train_ticker">Ticker Symbol:</label>
                     <input type="text" id="train_ticker" name="train_ticker" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="model_type">Model Type:</label>
+                    <select id="model_type" name="model_type">
+                        <option value="MLP">MLP</option>
+                        <option value="RNN">RNN</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label for="num_epochs">Number of Epochs:</label>
