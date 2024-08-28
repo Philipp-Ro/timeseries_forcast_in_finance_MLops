@@ -1,0 +1,7 @@
+model_params:
+# add other model specific settings 
+  features:
+  - feature_1
+  - feature_2
+  model_name: None
+  output_size: 1

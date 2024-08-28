@@ -88,15 +88,6 @@ class RNN_model():
         # train_params.yaml 
         # output 
         # trained model ,  self.params 
-
-        # get train data :
-        # df : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
-        # start_date_train: pandas dateime obj of the first candle in the training 
-        # end_date_train: pandas dateime obj of the last candle in the training 
-   
-        df,start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
-                                                                        features_list=train_params['model_params']["features"])
-
         # load RNN model params
         current_file_dir = os.path.dirname(os.path.abspath(__file__))
         yaml_path = os.path.join(current_file_dir,'RNN_params.yaml')
@@ -105,6 +96,14 @@ class RNN_model():
             model_params = yaml.safe_load(file)
 
         train_params['model_params'] = model_params['model_params']
+
+        # get train data :
+        # df : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # start_date_train: pandas dateime obj of the first candle in the training 
+        # end_date_train: pandas dateime obj of the last candle in the training 
+   
+        df,start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
+                                                                        features_list=train_params['model_params']["features"])
       
         #Create sequences
         sequences, targets = data_api_2.create_sequences(df, 
@@ -126,7 +125,11 @@ class RNN_model():
         Y_test= torch.tensor(test_targets, dtype=torch.float32)
        
         # intt model optimizer and lossfct
-        model = RNN_price_predictor(train_params['model_params']['input_size'], train_params['model_params']['hidden_size'], train_params['model_params']['num_layers'], train_params['model_params']['output_size'])
+        model = RNN_price_predictor(train_params['model_params']['input_size'], 
+                                    train_params['model_params']['hidden_size'], 
+                                    train_params['model_params']['num_layers'], 
+                                    train_params['train_params']['forecast_len'])
+        
         optimizer = optim.Adam(model.parameters(), lr=train_params['train_params']['lr'])
         criterion = nn.MSELoss()
 

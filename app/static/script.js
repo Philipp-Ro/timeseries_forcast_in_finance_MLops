@@ -1,10 +1,11 @@
 // Predict Button Event Listener
 const btn_predict = document.getElementById('predictButton');
 let modelsData = {'ticker':'AAPL', 'model_list':[] , 'mae_dict': []}
-
+let refreshCount = 0;
 if (btn_predict) {
     btn_predict.onclick = async function() {
         const tickerInput = document.getElementById('ticker').value;
+        let refreshCount = 0;
         if (!tickerInput) {
             alert('Please enter a ticker symbol.');
             return;
@@ -17,6 +18,15 @@ if (btn_predict) {
             console.log('modelsData:', modelsData);
             await displayModels(modelsData);
             await refreshImage(modelsData);
+            // call refresh image 10 times than stop to safe API requests
+            const intervalId = setInterval(async function() {
+                await refreshImage(modelsData);
+                refreshCount++;
+                
+                if (refreshCount >= 10) {
+                    clearInterval(intervalId);
+                }
+            }, 60000); // 60 seconds interval
         }
 
     };
@@ -163,24 +173,6 @@ async function refreshImage(modelsData) {
     isRefreshing = false;
 }
 
-// Refresh every 10s
-let refreshCount = 0;
-const maxRefreshes = 10;  // Set the maximum number of refreshes
-
-const intervalId = setInterval(async () => {
-    const tickerInput = document.getElementById('ticker').value;
-    const modelData = await fetchModels(tickerInput);
-    
-    if (modelData) {
-        await refreshImage(modelData);
-    }
-    
-    refreshCount++;  // Increment the counter after each refresh
-    
-    if (refreshCount >= maxRefreshes) {
-        clearInterval(intervalId);  // Stop the interval after 10 refreshes
-    }
-}, 60000);  // 10 seconds (10000 milliseconds) interval
 
 // Handling new model training modal
 const btn_train = document.getElementById("trainNewModelButton");
@@ -256,6 +248,15 @@ if (trainForm) {
             if (modelsData) {
                 await displayModels(modelsData);
                 await refreshImage(modelsData);
+                // call refresh image 10 times than stop to safe API requests
+                const intervalId = setInterval(async function() {
+                    await refreshImage(modelsData);
+                    refreshCount++;
+                    
+                    if (refreshCount >= 10) {
+                        clearInterval(intervalId);
+                    }
+                }, 60000); // 60 seconds interval
             }
             modal.style.display = "none";
 

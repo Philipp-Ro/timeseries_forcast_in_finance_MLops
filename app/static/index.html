@@ -10,26 +10,28 @@
 </head>
 <body>
     <div class="container">
-        <h1>ML Ops showcase for live prediction of assets</h1>
+        <h1>ML Ops Showcase: Live Asset Price Prediction</h1>
         <p>
-            This project is designed as a fully containerized MLOps pipeline deployed on an AWS EC2 instance. 
-            You can choose a stock symbol and view the available models in the database. 
-            If no models are found, you can train an RNN or MLP model on the minute-by-minute closing prices. 
-            Once the actual price reaches the forecast length of your model, the Mean Absolute Error (MAE) 
-            is automatically calculated and continuously updated.
-        </p>
-        
-        <p>
-            The project is utilised using javaScript,FastApi, Pytorch and Docker structured to easily expand the pipeline with additional model architectures 
-            and more advanced training configurations. The source code and Documentation is available 
-            <a href="https://github.com/Philipp-Ro/timeseries_forcast_in_finance_MLops">here</a>.
-        </p>
-        
-        <p>
-            Please note that since this is a live prediction, the market for your chosen asset must be 
-            open at the time of prediction.
+            This project showcases a fully containerized MLOps pipeline, seamlessly deployed on an AWS EC2 instance. The platform 
+            allows users to select a stock symbol and explore available prediction models in the database. If no models are found, 
+            users can train either a Recurrent Neural Network (RNN) on raw data or a Multilayer Perceptron (MLP) on extracted 
+            features for minute-by-minute closing prices. As the actual prices evolve and reach the forecast length, the system 
+            automatically calculates the Mean Absolute Error (MAE), which is continuously updated in real time.
         </p>
 
+        <p><strong>Tech Stack:</strong> JavaScript, FastAPI, PyTorch, Plotly, Docker</p>
+
+        <p>
+            The system is designed with scalability in mind, allowing easy integration of additional model architectures 
+            and more advanced training configurations. For more details, including the source code and comprehensive 
+            documentation, please visit the 
+            <a href="https://github.com/Philipp-Ro/timeseries_forcast_in_finance_MLops">GitHub repository</a>.
+        </p>
+
+        <p>
+            <strong>Note:</strong> Since this is a live prediction system, the market for your chosen asset must be open 
+            during prediction. For a continuous prediction experience, try the BTC-USD pair, available 24/7.
+        </p>
         <form id="modelForm">
             <div class="form-group">
                 <label for="ticker">Ticker Symbol:</label>

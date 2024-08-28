@@ -88,12 +88,6 @@ class MLP_model():
         # output 
         # trained model ,  self.params 
 
-        # get train data :
-        # df : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
-        # start_date_train: pandas dateime obj of the first candle in the training 
-        # end_date_train: pandas dateime obj of the last candle in the training 
-        df, start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
-                                                                        features_list=train_params['model_params']["features"])
         current_file_dir = os.path.dirname(os.path.abspath(__file__))
 
         # load model sprecific specs 
@@ -103,6 +97,12 @@ class MLP_model():
 
         train_params['model_params'] =model_params['model_params']
 
+        # get train data :
+        # df : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
+        # start_date_train: pandas dateime obj of the first candle in the training 
+        # end_date_train: pandas dateime obj of the last candle in the training 
+        df, start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
+                                                                        features_list=train_params['model_params']["features"])
      
         # Create sequences for training 
         # sequneces: List of Dataframes len(60) columns = ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']

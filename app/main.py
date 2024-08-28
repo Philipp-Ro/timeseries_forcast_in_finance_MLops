@@ -98,11 +98,12 @@ async def predict_stock(request: PlotRequest):
     # Datetime      Model_name_A            Model_name_B              Close
     # date          prediction_model A      prediction_model B        actual_price
     df_plot = pd.DataFrame(all_preds)
-
+    df_plot = df_plot.tail(60)
     # merging both dataframes 
     df_plot = df_plot.drop_duplicates(subset=['Datetime', 'Model_name'])               
     pivoted_df = df_plot.pivot(index='Datetime', columns='Model_name', values='Prediction').reset_index()
     plot_data = pd.merge(pivoted_df, plot_data, on="Datetime", how='outer').sort_values(by='Datetime').reset_index(drop=True)
+    plot_data = plot_data.tail(60)
 
     # Iterate over model columns
     for model_col in [col for col in plot_data.columns if col in model_list]:
@@ -198,7 +199,7 @@ def train_model(request:TrainRequest):
     logger.debug(f"Model has a forcast length of : {forecast_len}")
     params['data_params']['ticker'] = ticker
     params['train_params']['num_epochs'] = num_epochs
-    params['model_params']['output_size'] = forecast_len
+    params['train_params']['forecast_len'] = forecast_len
 
     if model_type == 'RNN':
         RNN_model = RNN_model_class.RNN_model()
@@ -283,8 +284,7 @@ def save_training(model, params):
 async def delete_model(request: DeleteModelRequest):
     ticker = request.ticker
     model = request.model
-    ticker_dir = os.path.join(MODEL_DB_DIR,ticker)
-    model_dir = os.path.join(ticker_dir, model)
+    model_dir = os.path.join(MODEL_DB_DIR, model)
 
     logger.debug(f"MODEL DIR   : {model_dir}")
     success = delete_folder(model_dir)

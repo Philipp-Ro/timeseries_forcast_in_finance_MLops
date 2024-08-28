@@ -11,12 +11,12 @@ import pandas as pd
 import data_api_2
 
 class MLP_predictor(nn.Module):
-    def __init__(self, input_size, hidden_size=64, output_size=1):
+    def __init__(self, input_size, hidden_size=64):
         super(MLP_predictor, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.relu = nn.ReLU()
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, output_size)
+        self.fc3 = nn.Linear(hidden_size, 1)
     
     def forward(self, x):
         x = self.fc1(x)
@@ -94,6 +94,12 @@ class MLP_model():
         # train_params.yaml 
         # output 
         # trained model ,  self.params 
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        yaml_path = os.path.join(current_file_dir,'MLP_params.yaml')
+        with open(yaml_path, 'r') as file:
+            model_params = yaml.safe_load(file)
+
+        train_params['model_params'] =model_params['model_params']
 
         # get train data :
         # df : Dataframe with length 60 and the columns ['Datetime', 'Open', 'High', 'Low', 'Volume', 'Close']
@@ -103,15 +109,6 @@ class MLP_model():
         df,start_date_train, end_date_train = data_api_2.get_train_data(ticker=train_params['data_params']['ticker'],
                                                                         features_list=train_params['model_params']["features"])
        
-        current_file_dir = os.path.dirname(os.path.abspath(__file__))
-
-        yaml_path = os.path.join(current_file_dir,'MLP_params.yaml')
-        with open(yaml_path, 'r') as file:
-            model_params = yaml.safe_load(file)
-
-        train_params['model_params'] =model_params['model_params']
-
-     
         #Create sequences
         sequences, targets = data_api_2.create_sequences(df, 
                                                          seq_length=train_params['data_params']['seq_length'], 
@@ -138,7 +135,9 @@ class MLP_model():
        
         # intt model optimizer and lossfct
 
-        model = MLP_predictor(model_params['model_params']['input_size'], model_params['model_params']['hidden_size'], model_params['model_params']['output_size'])
+        model = MLP_predictor(model_params['model_params']['input_size'], 
+                              model_params['model_params']['hidden_size'])
+        
         optimizer = optim.Adam(model.parameters(), lr=train_params['train_params']['lr'])
         criterion = nn.MSELoss()
 
